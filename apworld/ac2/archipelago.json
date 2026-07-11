@@ -1,0 +1,8 @@
+{
+    "game": "Assassin's Creed II",
+    "world_version": "0.1.0",
+    "minimum_ap_version": "0.6.7",
+    "compatible_version": 1,
+    "version": 1,
+    "authors": ["AC2AP contributors"]
+}

@@ -1,0 +1,36 @@
+# === Build artifacts ===
+client/build/
+*.obj
+*.o
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.exp
+
+# === Python ===
+__pycache__/
+*.pyc
+
+# === Game saves & extracted game data (never commit copyrighted content) ===
+*.save
+Extracted/
+dwld/
+saves-chapitres/
+backups/
+labo-diff/
+test-gen/
+
+# === Internal working files (French RE notes, design docs, dev scripts) — not in this release ===
+# The design docs under docs/ are still French; excluded until translated. README covers the essentials.
+docs/
+NOTES-SESSION.md
+tools/
+apworld/NOTES.md
+apworld/PROGRESS.md
+
+# === OS / editor ===
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

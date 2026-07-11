@@ -1,0 +1,46 @@
+cmake_minimum_required(VERSION 3.20)
+project(AC2AP CXX C)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# static runtime: no vcredist dependency inside the game process
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
+option(AC2AP_WITH_AP "Build the Archipelago client (apclientpp)" ON)
+
+set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps)
+
+# zlib compiled into the DLL (websocketpp permessage_deflate requires it)
+file(GLOB ZLIB_SRC ${DEPS}/zlib/*.c)
+# MinHook: robust function hooks (trampoline + relocation + thread freeze)
+file(GLOB MINHOOK_SRC ${DEPS}/minhook/src/*.c ${DEPS}/minhook/src/hde/*.c)
+
+add_library(ac2ap_asi SHARED src/dllmain.cpp ${ZLIB_SRC} ${MINHOOK_SRC})
+set_target_properties(ac2ap_asi PROPERTIES OUTPUT_NAME "AC2AP" SUFFIX ".asi" PREFIX "")
+target_link_libraries(ac2ap_asi PRIVATE ws2_32)
+target_include_directories(ac2ap_asi PRIVATE ${DEPS}/minhook/include)
+
+add_executable(test_records src/test_records.cpp)
+
+foreach(t ac2ap_asi test_records)
+    target_compile_definitions(${t} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(${t} PRIVATE /EHsc /W3)
+endforeach()
+
+if(AC2AP_WITH_AP)
+    target_compile_definitions(ac2ap_asi PRIVATE
+        AC2AP_WITH_AP
+        ASIO_STANDALONE
+        WSWRAP_NO_SSL
+        AP_NO_SCHEMA
+        _WEBSOCKETPP_CPP11_THREAD_
+        _WEBSOCKETPP_CPP11_STL_
+        _WIN32_WINNT=0x0601)
+    target_include_directories(ac2ap_asi PRIVATE
+        ${DEPS}/apclientpp
+        ${DEPS}/wswrap/include
+        ${DEPS}/websocketpp
+        ${DEPS}/asio/asio/include
+        ${DEPS}/json/include
+        ${DEPS}/zlib)
+endif()
