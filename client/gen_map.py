@@ -1,7 +1,7 @@
 """Generates AC2AP_map.txt: game_IDHEX -> AP_location_id.
 
 Mapping source: docs/re/mission-id-map.json (extracted from the AnvilToolkit XML,
-runtime_id_hex -> "Sequence N - Name"). Cross-referenced with the apworld location
+runtime_id_hex -> "Sequence N - Name"). Cross-referenced with the world's location
 table (Locations.py) to get the AP location id.
 
 Dev tool: needs the docs/re/ RE data (not shipped). The generated AC2AP_map.txt
@@ -12,7 +12,7 @@ import json
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-APWORLD_LOC = os.path.join(ROOT, "apworld", "ac2", "Locations.py")
+APWORLD_LOC = os.path.join(ROOT, "worlds", "ac2", "Locations.py")
 ID_MAP = os.path.join(ROOT, "docs", "re", "mission-id-map.json")
 ITEM_CATALOG = os.path.join(ROOT, "docs", "re", "item-id-catalog.txt")
 CHEST_DISTRICTS = os.path.join(ROOT, "docs", "re", "chest-districts.json")

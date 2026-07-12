@@ -26,8 +26,7 @@ test-gen/
 docs/
 NOTES-SESSION.md
 tools/
-apworld/NOTES.md
-apworld/PROGRESS.md
+apworld/
 
 # === OS / editor ===
 .DS_Store

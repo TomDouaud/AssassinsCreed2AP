@@ -87,6 +87,27 @@ bool read_file(const std::string& path, std::vector<uint8_t>& out) {
     return ok && got == size;
 }
 
+// Auto-detect the Ubisoft Connect save:
+//   %LOCALAPPDATA%\Ubisoft Game Launcher\savegames\<accountId>\4\1.save   (4 = AC2 game id)
+// The <accountId> folder is per Ubisoft account, so we enumerate it and return the first
+// folder that actually holds a 1.save. Returns "" if none is found.
+std::string find_ubisoft_save() {
+    const char* local = std::getenv("LOCALAPPDATA");
+    if (!local) return "";
+    std::string base = std::string(local) + "\\Ubisoft Game Launcher\\savegames";
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((base + "\\*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return "";
+    std::string found;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.') continue;
+        std::string cand = base + "\\" + fd.cFileName + "\\4\\1.save";
+        if (GetFileAttributesA(cand.c_str()) != INVALID_FILE_ATTRIBUTES) { found = cand; break; }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return found;
+}
+
 // --- persistent state: set of (type,id) already reported (fix BUG-001) -------
 std::string seen_path() { return g_dir + "\\AC2AP_seen.txt"; }
 
@@ -248,12 +269,14 @@ const char* type_name(uint64_t t) {
 
 DWORD WINAPI worker(LPVOID) {
     std::string ini = g_dir + "\\AC2AP.ini";
-    // Default = %LOCALAPPDATA%\storage\SKIDROW\4\1.save (Skidrow save location).
-    // Override with save_path in AC2AP.ini for other cracks / Uplay. Blank = auto-detect.
-    const char* local = std::getenv("LOCALAPPDATA");
-    std::string def_save = std::string(local ? local : "") + "\\storage\\SKIDROW\\4\\1.save";
+    // Save to watch. Priority: explicit save_path in the ini > Ubisoft Connect auto-detect >
+    // Skidrow default (%LOCALAPPDATA%\storage\SKIDROW\4\1.save).
     g_save_path = ini_get(ini, "save_path", "");
-    if (g_save_path.empty()) g_save_path = def_save;
+    if (g_save_path.empty()) g_save_path = find_ubisoft_save();
+    if (g_save_path.empty()) {
+        const char* local = std::getenv("LOCALAPPDATA");
+        g_save_path = std::string(local ? local : "") + "\\storage\\SKIDROW\\4\\1.save";
+    }
     g_server = ini_get(ini, "server", "");
     g_slot = ini_get(ini, "slot", "");
     g_password = ini_get(ini, "password", "");

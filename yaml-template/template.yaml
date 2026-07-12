@@ -1,0 +1,37 @@
+# Assassin's Creed II template for Archipelago.
+# Fill in your name and adjust the options, then drop this file in Archipelago's Players/ folder.
+# Values shown are the defaults.
+
+name: Player{NUMBER}
+description: 'AC2AP default template'
+game: Assassin's Creed II
+
+Assassin's Creed II:
+  # --- Goal ---
+  # rodrigo = complete Sequence 14 - In Bocca al Lupo (the only implemented goal).
+  goal: rodrigo
+
+  # --- Check categories ---
+  main_missions: 'true'        # the 86 main story missions
+  chests: 'false'              # treasure chests
+  chest_sanity: district       # district = one check per district (12) | individual = one per chest (330)
+  feathers: 'false'            # feathers
+  feather_sanity: district     # district = one per district (11) | individual = one per feather (100)
+  statues: 'false'             # the 8 Monteriggioni statues
+  shop_items: 'true'           # blacksmith / tailor / art dealer purchases
+  codex_pages: 'false'         # Codex pages
+
+  # Reserved but not yet implemented (enabling has no effect):
+  secondary_missions: 'false'
+  viewpoints: 'false'
+  glyphs: 'false'
+  tombs: 'false'
+  villa_renovations: 'false'
+
+  # --- Logic ---
+  region_gating: 'true'        # gate cities by story progression (off = everything open from the start)
+  required_codex_pages: 30     # codex pages needed to unlock Sequence 14 (only if codex_pages is on): 30 | 20 | 10
+
+  # --- Fun ---
+  death_link: 'false'          # share deaths with the DeathLink group
+  trap_fill: 0                 # 0-100: percentage of filler replaced by traps

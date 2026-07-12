@@ -13,7 +13,7 @@ A multiworld randomizer for **Assassin's Creed II** (PC), built for the
 
 AC2AP has two parts:
 
-- **`apworld/ac2/`** — the Python world for Archipelago. Defines the items,
+- **`worlds/ac2/`** — the Python world for Archipelago. Defines the items,
   locations, region logic and player options (`.yaml`) used by the AP
   generator.
 - **`client/`** — an ASI mod (C++) injected into the game. It embeds an
@@ -62,7 +62,7 @@ the source tree.
 3. Edit `AC2AP.ini`:
    ```ini
    [ac2ap]
-   save_path=          ; blank = auto-detect the Skidrow default
+   save_path=          ; blank = auto-detect (Ubisoft Connect, then Skidrow)
    server=archipelago.gg:38281
    slot=YourSlotName
    password=
@@ -82,17 +82,20 @@ cmake -B build -A Win32 -DAC2AP_WITH_AP=ON
 cmake --build build --config Release
 ```
 
-The result is `AC2AP.asi`. Package the `.apworld` by zipping `apworld/ac2/` into
+The result is `AC2AP.asi`. Package the `.apworld` by zipping `worlds/ac2/` into
 `ac2.apworld` (a zip whose top-level folder is `ac2/`).
 
 ## Layout
 
 ```
-apworld/ac2/      Archipelago world (Python)
-client/src/       ASI mod source (C++)
-client/deps/      vendored third-party headers
-client/dist/      shipped client files (.ini template, generated map)
-client/gen_map.py dev tool that regenerates AC2AP_map.txt
+worlds/ac2/         Archipelago world (Python) — Items, Locations, Options, Regions, Rules
+worlds/ac2/docs/    webhost game info + setup guide
+worlds/ac2/test/    unit tests (WorldTestBase)
+yaml-template/      sample player config
+client/src/         ASI mod source (C++)
+client/deps/        third-party headers (not committed — see client/README.md)
+client/dist/        shipped client files (.ini template, generated map, ac2.apworld)
+client/gen_map.py   dev tool that regenerates AC2AP_map.txt
 ```
 
 ## Disclaimer

@@ -1,9 +1,9 @@
 """AC2AP - Archipelago world for Assassin's Creed II.
 
-MVP scope ("missions + economy"): the 86 main story missions are locations,
-progression is gated by Progressive Sequence items, Sequence 14 is the default
-goal. See apworld/NOTES.md for scope decisions and apworld/PROGRESS.md for
-implementation status.
+The 86 main story missions are locations, progression is gated by Progressive
+Sequence items, and Sequence 14 is the default goal. Collectibles (chests,
+feathers, statues), shop purchases and Codex pages are additional check
+categories behind their options. See the project README for feature status.
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ class AC2Web(WebWorld):
     tutorials = [
         Tutorial(
             "Multiworld Setup Guide",
-            "A guide to setting up AC2AP for MultiworldGG/Archipelago.",
+            "A guide to setting up AC2AP for Archipelago.",
             "English",
             "setup_en.md",
             "setup/en",
