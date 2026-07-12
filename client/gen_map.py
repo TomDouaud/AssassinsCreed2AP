@@ -132,6 +132,14 @@ with open(OUT, "w", encoding="ascii") as f:
     for cat, ids in COUNTED.items():
         for idx, apid in enumerate(ids):
             f.write(f"@{cat} {idx} {apid}\n")
+    # Victory: when this mission record appears in the save, the client reports
+    # ClientStatus::GOAL to the server (the seed is finished).
+    goal_gid = next((g for g, n in id_map.items() if n == loc.GOAL_LOCATION_NAME), None)
+    if goal_gid:
+        f.write(f"# Victory (goal mission): !GOAL <game_id_hex>\n")
+        f.write(f"!GOAL {goal_gid}\n")
+    else:
+        print(f"WARNING: goal '{loc.GOAL_LOCATION_NAME}' not in id_map -> no !GOAL line")
 print(f"{mapped} missions, {missing_loc} missing; feathers={len(feather_map)}; "
       f"presence(chests+statues)={len(presence)}; "
       f"counted: " + ", ".join(f"{c}={len(v)}" for c, v in COUNTED.items()) + f" -> {OUT}")

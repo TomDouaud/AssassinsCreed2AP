@@ -192,6 +192,19 @@ std::map<uint32_t, int64_t> load_map() {
     return m;
 }
 
+// --- victory: "!GOAL <game_id_hex>" = mission record whose presence means the seed is won ----
+uint32_t load_goal_id() {
+    std::ifstream f(g_dir + "\\AC2AP_map.txt");
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.rfind("!GOAL", 0) != 0) continue;
+        std::istringstream ss(line.substr(5));
+        uint32_t id = 0;
+        if (ss >> std::hex >> id) return id;
+    }
+    return 0;
+}
+
 // --- collectibles by PRESENCE: "~<forge_id_hex> <ap_id>" ---------------------
 // A collectible ID appears in the save ONLY if it has been collected
 // (proven: feathers-present == feathers record-based, identical). For "loot" collectibles
@@ -291,8 +304,10 @@ DWORD WINAPI worker(LPVOID) {
     auto presence = load_presence();
     auto counted = load_counted();
     auto counted_state = load_counted_state();
-    logf("state loaded: %zu (type,id) known, map: %zu missions, %zu counted categories",
-         seen.size(), id_map.size(), counted.size());
+    uint32_t goal_id = load_goal_id();               // 0 = no goal line in the map
+    bool goal_sent = false;                          // report ClientStatus::GOAL once per session
+    logf("state loaded: %zu (type,id) known, map: %zu missions, %zu counted categories, goal=%08X",
+         seen.size(), id_map.size(), counted.size(), goal_id);
 
     std::vector<int64_t> pending = load_pending();   // checks to send to the server
     if (!pending.empty()) logf("%zu checks pending send (previous session)", pending.size());
@@ -541,6 +556,22 @@ DWORD WINAPI worker(LPVOID) {
 
         auto counts = ac2ap::parse_records(buf.data(), buf.size());
         auto fresh = ac2ap::unseen_keys(seen, counts);
+
+        // Victory: if the goal mission record is present in the save, tell the server the seed
+        // is won. Checked on every scan (incl. baseline) so it fires even if the goal was
+        // completed before connecting. Sent once per session; harmless if the server already knows.
+#ifdef AC2AP_WITH_AP
+        if (ap && ap_authenticated && goal_id && !goal_sent) {
+            for (const auto& [k, n] : counts) {
+                if (k.id == goal_id) {
+                    ap->StatusUpdate(APClient::ClientStatus::GOAL);
+                    logf("AP: GOAL reached (goal mission %08X) -> StatusUpdate sent", goal_id);
+                    goal_sent = true;
+                    break;
+                }
+            }
+        }
+#endif
 
         // current counts of the "by count" collectibles
         int cur_vp = ac2ap::count_distinct_of_type(counts, ac2ap::REC_VIEWPOINT);
