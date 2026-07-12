@@ -50,7 +50,7 @@ disables anything not yet proven stable.
 ## Requirements
 
 - Assassin's Creed II for PC (build **1.01**, 32-bit `AssassinsCreedIIGame.exe`).
-- An [Ultimate ASI Loader](https://github.com/Thirisc/Ultimate-ASI-Loader) (or
+- An [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases) (or
   equivalent, e.g. a `winmm.dll`/`dinput8.dll` proxy) so the game loads `.asi` mods.
 - [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases) 0.6.7+ to
   generate a seed and run the server.
