@@ -1,6 +1,7 @@
 """Access rules for AC2AP regions and the victory goal."""
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from worlds.generic.Rules import set_rule
@@ -35,6 +36,19 @@ def set_region_rules(world: "AC2World") -> None:
         required = REGION_SEQUENCE_REQUIREMENT[region.name]
         for entrance in region.entrances:
             set_rule(entrance, lambda state, required=required: has_sequences(state, player, required))
+
+    # Per-mission story gating: a "Sequence N - ..." mission can only be played once the
+    # story has reached sequence N, i.e. with N-1 Progressive Sequences. Without this the
+    # region graph alone under-gates (e.g. Florence hosts Sequences 1-4 AND 13, so a Seq 13
+    # mission would be considered reachable from the start).
+    for location in multiworld.get_locations(player):
+        m = re.match(r"Sequence (\d+) - ", location.name)
+        if not m:
+            continue
+        required = int(m.group(1)) - 1
+        if required <= 0:
+            continue
+        set_rule(location, lambda state, required=required: has_sequences(state, player, required))
 
 
 def set_goal_rule(world: "AC2World") -> None:
