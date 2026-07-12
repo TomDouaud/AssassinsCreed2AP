@@ -115,6 +115,17 @@ def _build_main_mission_locations() -> Dict[str, AC2LocationData]:
 
 MAIN_MISSION_LOCATIONS: Dict[str, AC2LocationData] = _build_main_mission_locations()
 
+# Bonfire of the Vanities district liberations (2). Story-mandatory DLC arc events with
+# their own persistent mission records (live-confirmed 2026-07-12; forge:
+# SQ13_SantaMariaNovella_liberate / SQ13_SanGiovanni_liberate). Dedicated id sub-range so
+# the positional main-mission ids stay stable. The "Sequence 13 - " prefix makes them
+# sequence-gated like any other Sequence 13 location.
+LIBERATIONS_BASE = BASE_ID + 8400
+MAIN_MISSION_LOCATIONS["Sequence 13 - Liberate Santa Maria Novella"] = \
+    AC2LocationData(LIBERATIONS_BASE + 0, "Florence")
+MAIN_MISSION_LOCATIONS["Sequence 13 - Liberate San Giovanni"] = \
+    AC2LocationData(LIBERATIONS_BASE + 1, "Florence")
+
 # --- Viewpoints (73) -------------------------------------------------------
 # "Par compte" design (docs/re/correlation-02-07.md): detection is per-account,
 # no reliable per-viewpoint place name exists yet. Numbered locations, evenly

@@ -608,7 +608,7 @@ DWORD WINAPI worker(LPVOID) {
             if (it != id_map.end()) {
                 pending.push_back(it->second);
                 queued = true;
-                logf("  -> location AP %lld en file", (long long)it->second);
+                logf("  -> location AP %lld queued", (long long)it->second);
             }
         }
         // PRESENCE detection (chests/statues): ID present in the save = collected
