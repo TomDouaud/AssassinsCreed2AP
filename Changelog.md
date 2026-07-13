@@ -11,3 +11,6 @@
 - Items: Progressive Sequence, Codex Page, Assassin Seal, Progressive Hidden
   Blade, shop equipment, Florins, and traps (Templar Tax, Bad Medicine, Wanted).
 - Region gating by story progression.
+- Templar Grip (optional, off by default): reverse-notoriety challenge — your
+  notoriety is clamped to a floor that only Progressive Templar Grip items can
+  lower (25% per item). Community-suggested design; needs in-game calibration.

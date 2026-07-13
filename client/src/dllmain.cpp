@@ -32,6 +32,7 @@ constexpr int64_t PROGRESSIVE_HIDDEN_BLADE = 20240012003;
 constexpr int64_t FLORINS_100 = 20240012004;
 constexpr int64_t FLORINS_500 = 20240012005;
 constexpr int64_t FLORINS_1000 = 20240012006;
+constexpr int64_t PROGRESSIVE_TEMPLAR_GRIP = 20240012007;  // -25% notoriety floor each
 // Traps (reserved in Items.py on the apworld side; provisional ids)
 constexpr int64_t TRAP_TEMPLAR_TAX = 20240012100;   // -25% florins
 constexpr int64_t TRAP_BAD_MEDICINE = 20240012101;  // health -> 1
@@ -169,6 +170,8 @@ bool apply_item(int64_t item) {
     case item_ids::TRAP_BAD_MEDICINE: return ac2ap::game::cripple_health();
     case item_ids::TRAP_DEATH:        return ac2ap::game::kill_player();
     case item_ids::TRAP_WANTED:       return ac2ap::game::set_notoriety(1.0f);
+    case item_ids::PROGRESSIVE_TEMPLAR_GRIP:
+        return true;  // passive: the notoriety floor is recomputed from grip_indexes each tick
     default:
         // logical progression (Sequence/Codex/Seal/Blade): no in-game effect in v1,
         // the gating happens on the AP logic side. Counted as applied.
@@ -322,6 +325,12 @@ DWORD WINAPI worker(LPVOID) {
     bool death_link = false;         // enabled via slot_data
     bool death_pending = false;      // a remote death to apply in-game
     bool prev_alive = false;         // health tracking to detect the alive->dead transition
+    // Templar Grip (reverse notoriety): floor = start - 25% per grip item received.
+    // Grip items are counted by INDEX in the items_received handler (index-set = robust
+    // against resync replays), not in apply_item (skipped indexes would be lost on restart).
+    bool grip_enabled = false;
+    float grip_start = 0.0f;         // starting floor 0..1 (slot_data, percent/100)
+    std::set<int> grip_indexes;      // indexes of received Progressive Templar Grip items
     if (g_ap_enabled) {
         std::string uuid = ap_get_uuid(g_dir + "\\AC2AP_uuid.txt");
         ap.reset(new APClient(uuid, "Assassin's Creed II", g_server));
@@ -336,6 +345,13 @@ DWORD WINAPI worker(LPVOID) {
                 death_link = true;
                 ap->ConnectUpdate(false, 0, true, {"DeathLink"});
                 logf("AP: DeathLink ACTIVE");
+            }
+            if (slot_data.contains("templar_grip") && slot_data["templar_grip"].get<int>() != 0) {
+                grip_enabled = true;
+                int pct = slot_data.contains("templar_grip_start")
+                          ? slot_data["templar_grip_start"].get<int>() : 100;
+                grip_start = (float)pct / 100.0f;
+                logf("AP: Templar Grip ACTIVE, starting floor %d%%", pct);
             }
         });
         ap->set_bounced_handler([&](const nlohmann::json& cmd) {
@@ -356,6 +372,8 @@ DWORD WINAPI worker(LPVOID) {
             for (auto& it : items) {
                 logf("AP: item received index=%d item=%lld", it.index, (long long)it.item);
                 item_queue.push_back({it.index, it.item});
+                if (it.item == item_ids::PROGRESSIVE_TEMPLAR_GRIP)
+                    grip_indexes.insert(it.index);
             }
         });
         ap->set_socket_disconnected_handler([&]() {
@@ -523,6 +541,27 @@ DWORD WINAPI worker(LPVOID) {
                     logf("DeathLink applied: Ezio killed");
                     death_pending = false;
                     prev_alive = false;             // don't re-emit our own death
+                }
+            }
+        }
+#endif
+
+        // 1a-bis) Templar Grip: clamp notoriety to the current floor. Vanilla lowering
+        // (posters/heralds/officials) still works above the floor; below it, the value
+        // snaps back next tick. No-op while out of game (resolve fails cleanly).
+#ifdef AC2AP_WITH_AP
+        if (ap && ap_authenticated && grip_enabled) {
+            float floor = grip_start - 0.25f * (float)grip_indexes.size();
+            if (floor > 0.001f) {
+                float cur;
+                if (ac2ap::game::get_notoriety(cur) && cur < floor) {
+                    ac2ap::game::set_notoriety(floor);
+                    static bool logged_grip = false;
+                    if (!logged_grip) {
+                        logf("Templar Grip: notoriety clamped to floor %.2f (%zu grip items)",
+                             floor, grip_indexes.size());
+                        logged_grip = true;
+                    }
                 }
             }
         }

@@ -25,6 +25,10 @@ FLORINS_SMALL = "100 Florins"
 FLORINS_MEDIUM = "500 Florins"
 FLORINS_LARGE = "1000 Florins"
 
+# Templar Grip: each one lowers the notoriety floor by 25% (templar_grip option).
+# Created only when the option is on; count = starting floor / 25 (see create_items).
+PROGRESSIVE_TEMPLAR_GRIP = "Progressive Templar Grip"
+
 # Traps - ids aligned with the C++ client (dllmain.cpp item_ids)
 TRAP_TEMPLAR_TAX = "Templar Tax Trap"
 TRAP_BAD_MEDICINE = "Bad Medicine Trap"
@@ -53,6 +57,8 @@ ITEM_TABLE: Dict[str, AC2ItemData] = {
     FLORINS_SMALL: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 4, ItemClassification.filler),
     FLORINS_MEDIUM: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 5, ItemClassification.filler),
     FLORINS_LARGE: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 6, ItemClassification.filler),
+    # useful, not progression: no access rule depends on it (soft difficulty relief only)
+    PROGRESSIVE_TEMPLAR_GRIP: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 7, ItemClassification.useful, 4),
     # Traps: ids +100.. aligned with the client (item_ids::TRAP_* in dllmain.cpp)
     TRAP_TEMPLAR_TAX: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 100, ItemClassification.trap),
     TRAP_BAD_MEDICINE: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 101, ItemClassification.trap),

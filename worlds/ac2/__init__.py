@@ -17,6 +17,7 @@ from .Items import (
     ITEM_NAME_TO_ID,
     ITEM_TABLE,
     PROGRESSION_ITEMS,
+    PROGRESSIVE_TEMPLAR_GRIP,
     SHOP_ITEM_NAMES,
     TRAP_ITEMS,
     USEFUL_ITEMS,
@@ -83,6 +84,11 @@ class AC2World(World):
         if self.options.shop_items.value:
             item_pool.extend(self.create_item(name) for name in SHOP_ITEM_NAMES)
 
+        # Templar Grip: one item per 25% step of the starting floor (100 -> 4 items).
+        if self.options.templar_grip.value:
+            n_grip = self.options.templar_grip_start.value // 25
+            item_pool.extend(self.create_item(PROGRESSIVE_TEMPLAR_GRIP) for _ in range(n_grip))
+
         remaining = len(self.multiworld.get_unfilled_locations(self.player)) - len(item_pool)
         remaining = max(remaining, 0)
 
@@ -106,6 +112,9 @@ class AC2World(World):
             "required_codex_pages": self.options.required_codex_pages.value
             if self.options.codex_pages else 0,
             "death_link": bool(self.options.death_link.value),
+            "templar_grip": self.options.templar_grip.value,
+            "templar_grip_start": self.options.templar_grip_start.value
+            if self.options.templar_grip else 0,
         }
 
     def get_filler_item_name(self) -> str:

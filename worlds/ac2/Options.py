@@ -175,6 +175,37 @@ class Statues(Toggle):
     default = 0
 
 
+class TemplarGrip(Choice):
+    """Reverse-notoriety challenge: your notoriety is clamped to a floor that only
+    Progressive Templar Grip items can lower (25% per item, down to vanilla).
+
+    off (default): vanilla notoriety.
+    global_grip: one floor for the whole game (a per-region variant is planned once
+      in-RAM region detection is done).
+    Requires the client's RAM hooks (enable_health_hook=1 in AC2AP.ini).
+    """
+    display_name = "Templar Grip"
+    option_off = 0
+    option_global_grip = 1
+    default = 0
+
+
+class TemplarGripStart(Choice):
+    """Starting notoriety floor when Templar Grip is on.
+
+    100 (default) = maxed notoriety from the start: guards attack on sight until you
+    receive Progressive Templar Grip items. Lower values soften the challenge and
+    reduce how many Progressive Templar Grip items are added to the pool (one per
+    25% step).
+    """
+    display_name = "Templar Grip Starting Floor"
+    option_100 = 100
+    option_75 = 75
+    option_50 = 50
+    option_25 = 25
+    default = 100
+
+
 class RegionGating(DefaultOnToggle):
     """Gate content by story progression (Progressive Sequence items).
 
@@ -206,5 +237,7 @@ class AC2Options(PerGameCommonOptions):
     villa_renovations: VillaRenovations
     statues: Statues
     region_gating: RegionGating
+    templar_grip: TemplarGrip
+    templar_grip_start: TemplarGripStart
     death_link: DeathLink
     trap_fill: TrapFill
