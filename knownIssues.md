@@ -13,12 +13,16 @@ This is an early alpha. Known limitations:
   enforced inside the game (open world stays reachable).
 - **Weapon/equipment grant.** Equipment items circulate in the multiworld but are
   not yet materialized into Ezio's inventory in-game.
-- **Templar Grip is experimental.** The current implementation clamps the notoriety
-  meter, but AC2's renegade state is event-driven, so the intended "guards hostile
-  until items arrive" behavior is not delivered yet. The mechanic is being reworked
-  (state forcing); keep the option off for normal play.
-- **Wanted Trap may be inert.** Same root cause: writing the notoriety value without
-  a game event does not trigger the hostile state. Under investigation.
+- **Templar Grip is UNSTABLE / experimental (off by default).** It clamps the
+  notoriety *meter* to a floor that Progressive Templar Grip items lower (75% → 50%
+  → 25% → 0%). What it does NOT do: force the renegade *state*. In AC2 that state is
+  event-driven and computed by the guard AI (not a writable value — confirmed by
+  reverse-engineering, see notes), so a "guards hostile from the start" tier isn't
+  achievable via the meter. The clamp is capped just below the renegade trigger so it
+  stays inert while you are actually renegade (no meter re-pin, no repeated-animation
+  bug). Treat as a curiosity, not a balanced mode.
+- **Wanted Trap may be inert.** Same root cause: writing the notoriety value without a
+  game event does not force the hostile state.
 - **Build target.** Verified on the 1.01 build; other builds are untested.
 
 Found a bug? Please open an issue on the GitHub repository.

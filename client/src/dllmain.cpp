@@ -496,7 +496,7 @@ DWORD WINAPI worker(LPVOID) {
                 else if (op == "hwbpdump") {  // logs distinct writer EIPs collected so far (+ RVA)
                     uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
                     LONG n = ac2ap::game::g_hwbp_neips;
-                    char buf[64 * 24]; int p = 0;
+                    char buf[64 * 24]; int p = 0; buf[0] = 0;
                     for (LONG i = 0; i < n && p < (int)sizeof(buf) - 32; i++)
                         p += sprintf(buf + p, "%08X(rva %llX) ", (unsigned)ac2ap::game::g_hwbp_eips[i],
                                      (unsigned long long)(ac2ap::game::g_hwbp_eips[i] - base));
@@ -572,6 +572,13 @@ DWORD WINAPI worker(LPVOID) {
 #ifdef AC2AP_WITH_AP
         if (ap && ap_authenticated && grip_enabled) {
             float floor = grip_start - 0.25f * (float)grip_indexes.size();
+            // Never clamp up to the renegade-trigger level (meter 1.0). Capping below it means
+            // the clamp stays INERT while the player is actually renegade (cur == 1.0 > cap),
+            // instead of re-pinning 1.0 every tick and re-firing the renegade animation
+            // (the buggy behavior at floor 1.0). The forced-renegade tier isn't achievable via
+            // the meter anyway - see docs/design-notoriety.md (state is guard-AI driven).
+            const float GRIP_CAP = 0.90f;
+            if (floor > GRIP_CAP) floor = GRIP_CAP;
             if (floor > 0.001f) {
                 float cur;
                 if (ac2ap::game::get_notoriety(cur) && cur < floor) {
