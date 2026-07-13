@@ -426,6 +426,7 @@ DWORD WINAPI worker(LPVOID) {
                 else if (op == "money") done = ac2ap::game::add_money((int)arg);
                 else if (op == "kill") done = ac2ap::game::kill_player();
                 else if (op == "noto") done = ac2ap::game::set_notoriety((float)arg / 100.0f);
+                else if (op == "nnoto") done = ac2ap::game::call_set_notoriety((float)arg / 100.0f);  // native SetNotoriety
                 else if (op == "smoke")  done = ac2ap::game::set_consumable(ac2ap::game::consumable::SMOKE, (uint32_t)arg);
                 else if (op == "med")    done = ac2ap::game::set_consumable(ac2ap::game::consumable::MEDICINE, (uint32_t)arg);
                 else if (op == "poison") done = ac2ap::game::set_consumable(ac2ap::game::consumable::POISON, (uint32_t)arg);
@@ -488,6 +489,20 @@ DWORD WINAPI worker(LPVOID) {
                         logf("VILLA @%p : %s", (void*)v, buf);
                     }
                 }
+                else if (op == "hwbp") {   // hwbp <addr_hex>: hardware watchpoint on write (find writer EIPs)
+                    done = ac2ap::game::hwbp_arm((uintptr_t)arg);
+                    logf("HWBP arm @%08lX -> %s", arg, done ? "armed" : "failed");
+                }
+                else if (op == "hwbpdump") {  // logs distinct writer EIPs collected so far (+ RVA)
+                    uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
+                    LONG n = ac2ap::game::g_hwbp_neips;
+                    char buf[64 * 24]; int p = 0;
+                    for (LONG i = 0; i < n && p < (int)sizeof(buf) - 32; i++)
+                        p += sprintf(buf + p, "%08X(rva %llX) ", (unsigned)ac2ap::game::g_hwbp_eips[i],
+                                     (unsigned long long)(ac2ap::game::g_hwbp_eips[i] - base));
+                    logf("HWBP writers (%ld): %s", n, buf);
+                }
+                else if (op == "hwbpoff") { ac2ap::game::hwbp_disarm(); logf("HWBP disarmed"); }
                 else if (op == "notoobj") { // dumps the captured NotorietyManager (renegade-flag hunt)
                     uintptr_t o = (uintptr_t)ac2ap::game::g_noto_obj;
                     logf("NOTOOBJ = %p", (void*)o);

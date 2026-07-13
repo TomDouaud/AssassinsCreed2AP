@@ -7,11 +7,82 @@
 // loading/menus -> clean failure, we retry next tick.
 #pragma once
 #include <windows.h>
+#include <tlhelp32.h>
 #include <cstdint>
 #include <cstring>
 #include <MinHook.h>
 
 namespace ac2ap::game {
+
+// --- Hardware data breakpoint (non-invasive RE: find who writes an address) ----
+// Uses the CPU debug registers (DR0/DR7) via SetThreadContext + a VEH. No code is
+// patched, so it cannot corrupt the game; it only observes. Collects the distinct
+// EIPs that write the watched address, so a differential (idle baseline vs. an action)
+// reveals the event routine. One watchpoint (DR0), 4 bytes, on write.
+inline uintptr_t g_hwbp_addr = 0;
+inline uintptr_t g_hwbp_eips[64];
+inline volatile LONG g_hwbp_neips = 0;
+inline void* g_hwbp_veh = nullptr;
+
+inline LONG CALLBACK hwbp_handler(EXCEPTION_POINTERS* ep) {
+    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP) return EXCEPTION_CONTINUE_SEARCH;
+    CONTEXT* c = ep->ContextRecord;
+    if (!(c->Dr6 & 0x1)) return EXCEPTION_CONTINUE_SEARCH;   // not our DR0 hit
+    uintptr_t eip = c->Eip;
+    LONG n = g_hwbp_neips;
+    bool found = false;
+    for (LONG i = 0; i < n && i < 64; i++) if (g_hwbp_eips[i] == eip) { found = true; break; }
+    if (!found && n < 64) { g_hwbp_eips[n] = eip; InterlockedIncrement(&g_hwbp_neips); }
+    c->Dr6 = 0;
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+inline void hwbp_apply(uintptr_t addr, bool enable) {
+    DWORD pid = GetCurrentProcessId(), self = GetCurrentThreadId();
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+    THREADENTRY32 te{}; te.dwSize = sizeof(te);
+    if (Thread32First(snap, &te)) {
+        do {
+            if (te.th32OwnerProcessID != pid || te.th32ThreadID == self) continue;
+            HANDLE h = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME,
+                                  FALSE, te.th32ThreadID);
+            if (!h) continue;
+            SuspendThread(h);
+            CONTEXT ctx{}; ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+            if (GetThreadContext(h, &ctx)) {
+                if (enable) {
+                    ctx.Dr0 = addr;
+                    ctx.Dr7 &= ~((1UL << 0) | (0xFUL << 16));      // clear L0 + RW0/LEN0
+                    ctx.Dr7 |= (1UL << 0) | (1UL << 16) | (3UL << 18);  // L0, write, 4 bytes
+                } else {
+                    ctx.Dr7 &= ~(1UL << 0);
+                    ctx.Dr0 = 0;
+                }
+                ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+                SetThreadContext(h, &ctx);
+            }
+            ResumeThread(h);
+            CloseHandle(h);
+        } while (Thread32Next(snap, &te));
+    }
+    CloseHandle(snap);
+}
+
+inline bool hwbp_arm(uintptr_t addr) {
+    if (addr < 0x10000 || (addr & 3)) return false;   // must be 4-aligned
+    if (!g_hwbp_veh) g_hwbp_veh = AddVectoredExceptionHandler(1, hwbp_handler);
+    if (!g_hwbp_veh) return false;
+    g_hwbp_neips = 0;
+    g_hwbp_addr = addr;
+    hwbp_apply(addr, true);
+    return true;
+}
+
+inline void hwbp_disarm() {
+    if (g_hwbp_addr) hwbp_apply(g_hwbp_addr, false);
+    g_hwbp_addr = 0;
+}
 
 inline bool safe_read(uintptr_t addr, void* out, size_t n) {
     SIZE_T got = 0;
@@ -475,6 +546,33 @@ inline bool set_notoriety(float v) {
     if (!a) return false;
     if (v < 0.0f) v = 0.0f; else if (v > 100.0f) v = 100.0f;
     return safe_write(a, &v, 4);
+}
+
+// Calls the game's native SetNotoriety(float) instead of raw-writing [+0x0C].
+// thiscall: ecx = manager, one float stack arg, ret 4 (callee-cleaned). RVA 0xCADDB0
+// (module base 0x400000; resolved via GetModuleHandle). Unlike the raw write, this runs
+// the store + the state-notify sub, so the renegade state updates. Found via HW breakpoint
+// (docs/design-notoriety.md). EXPERIMENTAL: runs game logic from the worker thread; SEH-guarded
+// and gated behind the caller. Returns false if the manager isn't captured or on fault.
+inline uintptr_t g_set_noto_fn = 0;
+inline bool call_set_notoriety(float v) {
+    uintptr_t mgr = resolve_noto_addr();       // installs hook + validates g_noto_obj
+    if (!mgr) return false;
+    mgr -= 0x0C;                                // resolve_noto_addr returns obj+0x0C
+    if (!g_set_noto_fn)
+        g_set_noto_fn = (uintptr_t)GetModuleHandleA(nullptr) + 0xCADDB0;
+    uint32_t bits;
+    std::memcpy(&bits, &v, 4);
+    uintptr_t fn = g_set_noto_fn;
+    bool ok = true;
+    __try {
+        __asm {
+            mov  ecx, mgr
+            push bits
+            call fn            // ret 4: callee pops the arg, stack stays balanced
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+    return ok;
 }
 
 // Health read/write. Returns false if out-of-game.
