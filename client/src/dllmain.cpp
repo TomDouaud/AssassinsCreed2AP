@@ -488,6 +488,11 @@ DWORD WINAPI worker(LPVOID) {
                         logf("VILLA @%p : %s", (void*)v, buf);
                     }
                 }
+                else if (op == "notoobj") { // dumps the captured NotorietyManager (renegade-flag hunt)
+                    uintptr_t o = (uintptr_t)ac2ap::game::g_noto_obj;
+                    logf("NOTOOBJ = %p", (void*)o);
+                    done = o ? dump40(o) : false;
+                }
                 else if (op == "bases") { // logs the inventory bases (weapon probe)
                     uintptr_t inv = 0, pdi = 0, m1 = 0;
                     uintptr_t bhv = ac2ap::game::resolve_inv_bases(&inv, &pdi, &m1);
@@ -575,6 +580,16 @@ DWORD WINAPI worker(LPVOID) {
                 continue;
             }
             if (!apply_item(item)) break;         // player not in-game -> retry next tick
+#ifdef AC2AP_WITH_AP
+            // Receiving a grip item is felt immediately: notoriety drops to the new floor.
+            // (Otherwise the player would stay at the old level until tearing posters.)
+            if (grip_enabled && item == item_ids::PROGRESSIVE_TEMPLAR_GRIP) {
+                float nf = grip_start - 0.25f * (float)grip_indexes.size();
+                if (nf < 0.0f) nf = 0.0f;
+                ac2ap::game::set_notoriety(nf);
+                logf("Templar Grip: floor lowered to %.2f, notoriety set to it", nf);
+            }
+#endif
             logf("item %lld applied (index %d)", (long long)item, idx);
             applied_index = idx;
             save_applied_index(applied_index);

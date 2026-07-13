@@ -353,11 +353,12 @@ inline void __fastcall health_filter(uint32_t obj) {
             uint32_t m = *(volatile uint32_t*)((uintptr_t)g_health_obj + 0x5C);
             // c==0 allowed: a DEAD Ezio stays Ezio (otherwise the lock releases on death, captures
             // a guard, and re-triggers a DeathLink emission -> double emit, BUG-006).
-            if (c <= 100 && m >= 1 && m <= 100 && c <= m) return;  // Ezio ok, keep it
+            // m>=10: loading-screen garbage (1/1) must not hold the lock (seen live 12/07).
+            if (c <= 100 && m >= 10 && m <= 100 && c <= m) return;  // Ezio ok, keep it
         }
         uint32_t cur = *(volatile uint32_t*)(obj + 0x58);
         uint32_t mx  = *(volatile uint32_t*)(obj + 0x5C);
-        if (cur >= 1 && cur <= 100 && mx >= 1 && mx <= 100 && cur <= mx)
+        if (cur >= 1 && cur <= 100 && mx >= 10 && mx <= 100 && cur <= mx)
             g_health_obj = (volatile uint32_t*)obj;
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
@@ -409,17 +410,20 @@ inline uintptr_t resolve_health_addr(uintptr_t* max_out = nullptr) {
     return obj + 0x58;                     // Current Health = [pHealth]+58
 }
 
-// --- Notoriety hook (Wanted trap) --------------------------------------------
+// --- Notoriety hook (Wanted trap / Templar Grip) -------------------------------
 // Same principle as health: notoriety (float 0=None..1=max) lives in the
 // NotorietyManager, reached via ecx in the getter function:
 //   AOB "F3 0F 10 41 0C F3 0F 11 45 FC"; at offset 0: "movss xmm0,[ecx+0C]"
 //   -> ecx = NotorietyManager; notoriety = [ecx+0C]. We capture ecx via hook.
-// NotorietyManager = singleton -> we lock the 1st valid object (float 0..1).
+// CONTINUOUS capture (BUG-007): the manager is RE-CREATED on city change, so locking
+// the first object goes stale (writes land in a dead copy — clamp silently inert).
+// The HUD calls this getter every frame for the ACTIVE manager, so last-seen = current;
+// a transient wrong capture self-heals within a frame.
 inline volatile uint32_t* g_noto_obj = nullptr;   // captured ecx (NotorietyManager)
 inline void* g_noto_tramp = nullptr;
 
 inline void __fastcall noto_filter(uint32_t obj) {
-    if (obj < 0x10000 || g_noto_obj) return;      // singleton: lock once
+    if (obj < 0x10000) return;
     __try {
         float v = *(volatile float*)(obj + 0x0C);
         if (v >= 0.0f && v <= 1.0f) g_noto_obj = (volatile uint32_t*)obj;
