@@ -508,6 +508,17 @@ DWORD WINAPI worker(LPVOID) {
                     logf("NOTOOBJ = %p", (void*)o);
                     done = o ? dump40(o) : false;
                 }
+                else if (op == "villaall") {  // lists ALL villa-array copies (find the live one = the one that changes on renovate)
+                    int nc = ac2ap::game::villa_list_all();
+                    logf("VILLAALL: %d copies", nc);
+                    for (int c = 0; c < nc; c++) {
+                        auto& v = ac2ap::game::g_villa_copies[c];
+                        char b[200]; int p = 0;
+                        p += sprintf(b, "@%08X id0=%08X n=%d lvls=", (unsigned)v.base, v.first_id, v.n);
+                        for (int k = 0; k < v.n && k < 32 && p < 180; k++) p += sprintf(b + p, "%u", v.lvl[k]);
+                        logf("  %s", b);
+                    }
+                }
                 else if (op == "bases") { // logs the inventory bases (weapon probe)
                     uintptr_t inv = 0, pdi = 0, m1 = 0;
                     uintptr_t bhv = ac2ap::game::resolve_inv_bases(&inv, &pdi, &m1);

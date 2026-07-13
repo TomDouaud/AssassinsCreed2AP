@@ -350,6 +350,58 @@ inline uintptr_t resolve_villa_array() {
     return best;
 }
 
+// Enumerate ALL villa-array copies (templates + live). The live one is identified at
+// runtime as the copy whose levels CHANGE across a renovation (templates are frozen).
+// Fills g_villa_copies; returns the count.
+struct VillaCopy { uintptr_t base; int n; uint32_t first_id; uint8_t lvl[32]; };
+inline VillaCopy g_villa_copies[48];
+inline int g_villa_ncopies = 0;
+
+inline int villa_list_all() {
+    g_villa_ncopies = 0;
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t addr = 0x10000;
+    while (addr < 0xFFFF0000 && g_villa_ncopies < 48) {
+        if (!VirtualQuery((LPCVOID)addr, &mbi, sizeof(mbi))) break;
+        uintptr_t base = (uintptr_t)mbi.BaseAddress; size_t sz = mbi.RegionSize;
+        DWORD prot = mbi.Protect & 0xFF;
+        bool ok = mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE
+                  && (prot == PAGE_READWRITE || prot == PAGE_WRITECOPY) && !(mbi.Protect & PAGE_GUARD);
+        if (ok && sz >= 0x30) {
+            __try {
+                uint8_t* p = (uint8_t*)base;
+                auto sig = [](uint8_t* q) -> bool {
+                    if (*(uint32_t*)(q + 4) != (uint32_t)(uintptr_t)q) return false;
+                    uint32_t id = *(uint32_t*)(q + 0x14);
+                    if ((id & 0xFF) || (id >> 8) < 0x88000Du || (id >> 8) > 0x880017u) return false;
+                    return *(uint32_t*)q <= 10;
+                };
+                for (size_t i = 0; i + 0x48 <= sz && g_villa_ncopies < 48; i += 4) {
+                    uint8_t* q = p + i;
+                    if (!sig(q) || !sig(q + 0x18) || !sig(q + 0x30)) continue;
+                    uint32_t id0 = *(uint32_t*)(q + 0x14), id1 = *(uint32_t*)(q + 0x18 + 0x14),
+                             id2 = *(uint32_t*)(q + 0x30 + 0x14);
+                    if (id1 != id0 + 0x100 || id2 != id1 + 0x100) continue;
+                    uintptr_t first = base + i;
+                    while (first >= base + 0x18 && sig((uint8_t*)(first - 0x18))
+                           && *(uint32_t*)(first - 0x18 + 0x14) + 0x100 == *(uint32_t*)(first + 0x14))
+                        first -= 0x18;
+                    uint32_t spread = 0;
+                    int n = villa_scan_array(first, &spread);
+                    VillaCopy& c = g_villa_copies[g_villa_ncopies++];
+                    c.base = first; c.n = n;
+                    c.first_id = *(uint32_t*)(first + 0x14);
+                    for (int k = 0; k < n && k < 32; k++)
+                        c.lvl[k] = (uint8_t)*(uint32_t*)(first + (uintptr_t)k * 0x18);
+                    i = (first - base) + (size_t)n * 0x18;
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+        addr = base + sz;
+    }
+    return g_villa_ncopies;
+}
+
 // Inventory bases for exploration (weapon probe). 0 if out-of-game.
 //   pInventory = [b+0xC] (InventoryDataItem); PlayerDataItem = [b+0x0]; m1 = [pInventory+0x10]
 //   with b = [[bhv+0x10]+0x58]. (see enable-cheats notes: +58+0 = PlayerDataItem)
