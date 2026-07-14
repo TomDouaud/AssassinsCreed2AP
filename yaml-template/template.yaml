@@ -30,7 +30,6 @@ Assassin's Creed II:
 
   # --- Logic ---
   region_gating: 'true'        # gate cities by story progression (off = everything open from the start)
-  required_codex_pages: 30     # codex pages needed to unlock Sequence 14 (only if codex_pages is on): 30 | 20 | 10
 
   # --- Fun ---
   death_link: 'false'          # share deaths with the DeathLink group

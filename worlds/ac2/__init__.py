@@ -109,8 +109,6 @@ class AC2World(World):
     def fill_slot_data(self) -> Dict[str, Any]:
         return {
             "goal": self.options.goal.value,
-            "required_codex_pages": self.options.required_codex_pages.value
-            if self.options.codex_pages else 0,
             "death_link": bool(self.options.death_link.value),
             "templar_grip": self.options.templar_grip.value,
             "templar_grip_start": self.options.templar_grip_start.value

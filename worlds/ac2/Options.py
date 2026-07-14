@@ -153,18 +153,6 @@ class TrapFill(Range):
     default = 0
 
 
-class RequiredCodexPages(Choice):
-    """How many Codex Page items are required to unlock Sequence 14.
-
-    Only applies when the codex_pages option is enabled; ignored otherwise (gate stays open).
-    """
-    display_name = "Required Codex Pages"
-    option_all_30 = 30
-    option_20 = 20
-    option_10 = 10
-    default = 30
-
-
 class Statues(Toggle):
     """Include the 8 Monteriggioni statuettes as locations.
 
@@ -222,7 +210,6 @@ class RegionGating(DefaultOnToggle):
 @dataclass
 class AC2Options(PerGameCommonOptions):
     goal: Goal
-    required_codex_pages: RequiredCodexPages
     main_missions: MainMissions
     secondary_missions: SecondaryMissions
     viewpoints: Viewpoints

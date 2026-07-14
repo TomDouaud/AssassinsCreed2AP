@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from worlds.generic.Rules import set_rule
 
-from .Items import CODEX_PAGE, PROGRESSIVE_SEQUENCE
+from .Items import PROGRESSIVE_SEQUENCE
 from .Locations import GOAL_LOCATION_NAME
 from .Regions import REGION_SEQUENCE_REQUIREMENT
 
@@ -55,14 +55,12 @@ def set_goal_rule(world: "AC2World") -> None:
     multiworld = world.multiworld
     player = world.player
 
-    required_codex = world.options.required_codex_pages.value if world.options.codex_pages else 0
-
+    # Goal = reach Sequence 14. Vanilla AC2 already requires all 30 Codex pages to unlock
+    # the finale, so an extra AP "required codex items" gate would be redundant and confusing
+    # (you physically can't finish Seq 14 in-game without the pages). Codex pages, when the
+    # option is on, are just checks along the way.
     def goal_rule(state) -> bool:
-        if not has_sequences(state, player, 13):
-            return False
-        if required_codex > 0 and not state.has(CODEX_PAGE, player, required_codex):
-            return False
-        return True
+        return has_sequences(state, player, 13)
 
     goal_location = multiworld.get_location(GOAL_LOCATION_NAME, player)
     set_rule(goal_location, goal_rule)
