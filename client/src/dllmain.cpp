@@ -17,6 +17,7 @@
 
 #include "records.hpp"
 #include "game.hpp"
+#include "overlay.hpp"
 
 #ifdef AC2AP_WITH_AP
 #include <apclient.hpp>
@@ -302,6 +303,14 @@ DWORD WINAPI worker(LPVOID) {
     logf("AC2AP v0 started. save=%s server=%s slot=%s ap=%d",
          g_save_path.c_str(), g_server.c_str(), g_slot.c_str(), (int)g_ap_enabled);
 
+    // In-game overlay (D3D9 + ImGui): opt-in, off by default. Failure = overlay stays off.
+    bool overlay_on = ini_get(ini, "enable_overlay", "0") == "1";
+    if (overlay_on) {
+        bool ok = ac2ap::overlay::install(true);
+        logf("overlay: %s", ok ? "installed (D3D9 hook active)" : "not installed");
+        if (ok) ac2ap::overlay::toast("AC2AP overlay ready", IM_COL32(120, 200, 255, 255), 4000);
+    }
+
     auto seen = load_seen();
     auto id_map = load_map();
     auto presence = load_presence();
@@ -341,6 +350,7 @@ DWORD WINAPI worker(LPVOID) {
         ap->set_slot_connected_handler([&](const nlohmann::json& slot_data) {
             logf("AP: slot connected!");
             ap_authenticated = true;
+            ac2ap::overlay::toast("Connected to Archipelago", IM_COL32(120, 200, 255, 255), 4000);
             if (slot_data.contains("death_link") && slot_data["death_link"].get<bool>()) {
                 death_link = true;
                 ap->ConnectUpdate(false, 0, true, {"DeathLink"});
@@ -374,6 +384,14 @@ DWORD WINAPI worker(LPVOID) {
                 item_queue.push_back({it.index, it.item});
                 if (it.item == item_ids::PROGRESSIVE_TEMPLAR_GRIP)
                     grip_indexes.insert(it.index);
+                if (it.index > applied_index) {          // don't toast resync replays
+                    std::string name = ap->get_item_name(it.item, ap->get_game());
+                    std::string from = it.player > 0 ? ap->get_player_alias(it.player) : "";
+                    std::string msg = "Received: " + name;
+                    if (!from.empty() && it.player != ap->get_player_number())
+                        msg += "  (from " + from + ")";
+                    ac2ap::overlay::toast(msg, IM_COL32(140, 230, 140, 255));
+                }
             }
         });
         ap->set_socket_disconnected_handler([&]() {
@@ -653,6 +671,8 @@ DWORD WINAPI worker(LPVOID) {
                 if (k.id == goal_id) {
                     ap->StatusUpdate(APClient::ClientStatus::GOAL);
                     logf("AP: GOAL reached (goal mission %08X) -> StatusUpdate sent", goal_id);
+                    ac2ap::overlay::toast("Goal complete! In Bocca al Lupo",
+                                          IM_COL32(255, 215, 90, 255), 10000);
                     goal_sent = true;
                     break;
                 }
@@ -696,6 +716,12 @@ DWORD WINAPI worker(LPVOID) {
                 pending.push_back(it->second);
                 queued = true;
                 logf("  -> location AP %lld queued", (long long)it->second);
+#ifdef AC2AP_WITH_AP
+                if (ap && ap_authenticated) {
+                    std::string loc = ap->get_location_name(it->second, ap->get_game());
+                    ac2ap::overlay::toast("Checked: " + loc, IM_COL32(210, 210, 210, 255), 4000);
+                }
+#endif
             }
         }
         // PRESENCE detection (chests/statues): ID present in the save = collected

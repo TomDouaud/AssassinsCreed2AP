@@ -14,11 +14,17 @@ set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps)
 file(GLOB ZLIB_SRC ${DEPS}/zlib/*.c)
 # MinHook: robust function hooks (trampoline + relocation + thread freeze)
 file(GLOB MINHOOK_SRC ${DEPS}/minhook/src/*.c ${DEPS}/minhook/src/hde/*.c)
+# Dear ImGui: in-game overlay (core + D3D9/Win32 backends)
+set(IMGUI ${DEPS}/imgui)
+set(IMGUI_SRC
+    ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.cpp
+    ${IMGUI}/imgui_widgets.cpp
+    ${IMGUI}/backends/imgui_impl_dx9.cpp ${IMGUI}/backends/imgui_impl_win32.cpp)
 
-add_library(ac2ap_asi SHARED src/dllmain.cpp ${ZLIB_SRC} ${MINHOOK_SRC})
+add_library(ac2ap_asi SHARED src/dllmain.cpp ${ZLIB_SRC} ${MINHOOK_SRC} ${IMGUI_SRC})
 set_target_properties(ac2ap_asi PROPERTIES OUTPUT_NAME "AC2AP" SUFFIX ".asi" PREFIX "")
-target_link_libraries(ac2ap_asi PRIVATE ws2_32)
-target_include_directories(ac2ap_asi PRIVATE ${DEPS}/minhook/include)
+target_link_libraries(ac2ap_asi PRIVATE ws2_32 d3d9)
+target_include_directories(ac2ap_asi PRIVATE ${DEPS}/minhook/include ${IMGUI} ${IMGUI}/backends)
 
 add_executable(test_records src/test_records.cpp)
 
