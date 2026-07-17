@@ -44,6 +44,7 @@ Header-only unless noted. Versions pinned by apclientpp:
 | `json` | github.com/nlohmann/json | master |
 | `zlib` | github.com/madler/zlib | master (compiled into the DLL) |
 | `minhook` | github.com/TsudaKageyu/minhook | master |
+| `imgui` | github.com/ocornut/imgui | master (in-game overlay; uses the dx9 + win32 backends) |
 
 Notes:
 - asio `master` breaks websocketpp (`io_service` was removed) — use the pinned commit.

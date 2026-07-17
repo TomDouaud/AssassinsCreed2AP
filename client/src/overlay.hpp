@@ -30,10 +30,32 @@ inline Reset_t    o_Reset    = nullptr;
 inline bool g_imgui_ready = false;
 inline bool g_enabled = false;          // set by init() from the ini flag
 inline HWND g_hwnd = nullptr;
+inline const char* g_fail = "";         // last install() failure point (for logging)
 
 struct Toast { std::string text; ULONGLONG expire; ImU32 color; };
 inline std::mutex g_toast_mtx;
 inline std::deque<Toast> g_toasts;
+
+// --- connection menu (toggle with INSERT) ------------------------------------
+// The form fills g_conn; the worker thread polls g_conn.requested to (re)connect.
+struct ConnRequest {
+    char server[128] = "archipelago.gg:38281";
+    char slot[64] = "";
+    char password[64] = "";
+    volatile bool requested = false;   // set by UI, cleared by worker
+    volatile bool connected = false;   // set by worker for status display
+};
+inline ConnRequest g_conn;
+inline bool g_menu_open = false;
+inline WNDPROC o_WndProc = nullptr;
+
+// Prefill the form fields from the ini (worker calls once at startup).
+inline void set_defaults(const std::string& server, const std::string& slot, const std::string& pass) {
+    if (!server.empty()) strncpy(g_conn.server, server.c_str(), sizeof(g_conn.server) - 1);
+    strncpy(g_conn.slot, slot.c_str(), sizeof(g_conn.slot) - 1);
+    strncpy(g_conn.password, pass.c_str(), sizeof(g_conn.password) - 1);
+}
+inline void set_connected(bool c) { g_conn.connected = c; }
 
 // Thread-safe: called from the worker thread when an item/check event happens.
 inline void toast(const std::string& text, ImU32 color = IM_COL32(255, 255, 255, 255),
@@ -70,6 +92,51 @@ inline void render_toasts() {
     }
 }
 
+inline void render_menu() {
+    if (!g_menu_open) return;
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f,
+                                   ImGui::GetIO().DisplaySize.y * 0.5f),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_Appearing);
+    ImGui::Begin("AC2AP - Archipelago Connection", &g_menu_open,
+                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
+    ImGui::TextColored(g_conn.connected ? ImVec4(0.5f, 0.9f, 0.5f, 1) : ImVec4(0.9f, 0.6f, 0.4f, 1),
+                       g_conn.connected ? "Status: connected" : "Status: not connected");
+    ImGui::Separator();
+    ImGui::InputText("Server (host:port)", g_conn.server, sizeof(g_conn.server));
+    ImGui::InputText("Slot / player name", g_conn.slot, sizeof(g_conn.slot));
+    ImGui::InputText("Password", g_conn.password, sizeof(g_conn.password), ImGuiInputTextFlags_Password);
+    ImGui::Spacing();
+    if (ImGui::Button("Connect", ImVec2(120, 0))) {
+        g_conn.requested = true;
+        g_menu_open = false;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Close", ImVec2(120, 0))) g_menu_open = false;
+    ImGui::TextDisabled("Press INSERT or F8 to toggle this menu.");
+    ImGui::End();
+}
+
+// Is this a keyboard/mouse message we should swallow while the menu is open?
+inline bool is_input_msg(UINT m) {
+    return (m >= WM_KEYFIRST && m <= WM_KEYLAST) || (m >= WM_MOUSEFIRST && m <= WM_MOUSELAST) ||
+           m == WM_CHAR || m == WM_SETCURSOR;
+}
+
+inline LRESULT CALLBACK hk_WndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
+    // INSERT toggles the menu.
+    if (msg == WM_KEYDOWN && w == VK_INSERT) {
+        g_menu_open = !g_menu_open;
+        return 0;
+    }
+    if (g_imgui_ready) {
+        ImGui_ImplWin32_WndProcHandler(h, msg, w, l);
+        // While the menu is open, keep input from reaching the game (no Ezio moving as you type).
+        if (g_menu_open && is_input_msg(msg)) return 0;
+    }
+    return CallWindowProcA(o_WndProc, h, msg, w, l);
+}
+
 inline void init_imgui(IDirect3DDevice9* dev) {
     D3DDEVICE_CREATION_PARAMETERS cp{};
     if (dev->GetCreationParameters(&cp) == D3D_OK) g_hwnd = cp.hFocusWindow;
@@ -77,24 +144,57 @@ inline void init_imgui(IDirect3DDevice9* dev) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;               // no imgui.ini on disk
-    io.MouseDrawCursor = false;
     ImGui::StyleColorsDark();
     ImGui_ImplWin32_Init(g_hwnd);
     ImGui_ImplDX9_Init(dev);
+    // Hook the game's WndProc so ImGui gets keyboard/mouse (needed for the connection form).
+    if (g_hwnd)
+        o_WndProc = (WNDPROC)SetWindowLongPtrA(g_hwnd, GWLP_WNDPROC, (LONG_PTR)&hk_WndProc);
     g_imgui_ready = true;
 }
 
-inline HRESULT WINAPI hk_EndScene(IDirect3DDevice9* dev) {
+// Poll the toggle keys (INSERT / F8) outside any __try so string temporaries are allowed.
+// The game reads the keyboard via DirectInput, so WM_KEYDOWN never reaches our WndProc -
+// polling the async key state here is the reliable path.
+inline void poll_toggle() {
+    static bool prev_down = false;
+    bool down = (GetAsyncKeyState(VK_INSERT) & 0x8000) || (GetAsyncKeyState(VK_F8) & 0x8000);
+    if (down && !prev_down) {
+        g_menu_open = !g_menu_open;
+        toast(g_menu_open ? "menu: OPEN" : "menu: closed", IM_COL32(255, 180, 80, 255), 2000);
+    }
+    prev_down = down;
+}
+
+inline void render_frame(IDirect3DDevice9* dev) {
     __try {
         if (!g_imgui_ready) init_imgui(dev);
         ImGui_ImplDX9_NewFrame();
         ImGui_ImplWin32_NewFrame();
+        ImGuiIO& io = ImGui::GetIO();
+        io.MouseDrawCursor = g_menu_open;               // show a cursor only while the menu is up
+        // DirectInput game: mouse/keyboard don't arrive as window messages, so feed ImGui
+        // manually while the menu is open. Also release the game's cursor clip so the pointer
+        // can move over the menu (the game re-locks it for the camera each frame otherwise).
+        if (g_menu_open && g_hwnd) {
+            ClipCursor(nullptr);
+            POINT p; GetCursorPos(&p); ScreenToClient(g_hwnd, &p);
+            io.AddMousePosEvent((float)p.x, (float)p.y);
+            io.AddMouseButtonEvent(0, (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+            io.AddMouseButtonEvent(1, (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0);
+        }
         ImGui::NewFrame();
         render_toasts();
+        render_menu();
         ImGui::EndFrame();
         ImGui::Render();
         ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
+}
+
+inline HRESULT WINAPI hk_EndScene(IDirect3DDevice9* dev) {
+    poll_toggle();       // key polling (may create string temporaries) - outside the __try
+    render_frame(dev);   // ImGui render, SEH-guarded (no local objects to unwind)
     return o_EndScene(dev);
 }
 
@@ -111,35 +211,45 @@ inline bool install(bool enabled_from_ini) {
     g_enabled = enabled_from_ini;
     if (!g_enabled) return false;
 
-    // Throwaway message-only window for the dummy device.
-    WNDCLASSEXA wc{sizeof(wc)}; wc.lpfnWndProc = DefWindowProcA;
-    wc.hInstance = GetModuleHandleA(nullptr); wc.lpszClassName = "AC2AP_dummy";
-    RegisterClassExA(&wc);
-    HWND wnd = CreateWindowA(wc.lpszClassName, "", WS_OVERLAPPEDWINDOW, 0, 0, 8, 8,
-                             nullptr, nullptr, wc.hInstance, nullptr);
-    if (!wnd) return false;
+    // Throwaway window for the dummy device. Use the game's foreground window as focus
+    // (a fresh hidden HWND can make CreateDevice fail while the game holds the display).
+    HWND focus = GetForegroundWindow();
+    if (!focus) focus = GetDesktopWindow();
 
     IDirect3D9* d3d = Direct3DCreate9(D3D_SDK_VERSION);
-    if (!d3d) { DestroyWindow(wnd); return false; }
+    if (!d3d) { g_fail = "Direct3DCreate9"; return false; }
     D3DPRESENT_PARAMETERS pp{};
-    pp.Windowed = TRUE; pp.SwapEffect = D3DSWAPEFFECT_DISCARD; pp.hDeviceWindow = wnd;
+    pp.Windowed = TRUE;
+    pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+    pp.hDeviceWindow = focus;
+    pp.BackBufferWidth = 8;
+    pp.BackBufferHeight = 8;
+    pp.BackBufferFormat = D3DFMT_UNKNOWN;
     IDirect3DDevice9* dev = nullptr;
-    HRESULT hr = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, wnd,
-                                   D3DCREATE_SOFTWARE_VERTEXPROCESSING | D3DCREATE_DISABLE_DRIVER_MANAGEMENT,
+    HRESULT hr = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, focus,
+                                   D3DCREATE_SOFTWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED,
                                    &pp, &dev);
-    if (FAILED(hr) || !dev) { d3d->Release(); DestroyWindow(wnd); return false; }
+    if (FAILED(hr) || !dev) {   // retry with NULLREF device (vtable is the same)
+        hr = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_NULLREF, focus,
+                               D3DCREATE_SOFTWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED,
+                               &pp, &dev);
+    }
+    if (FAILED(hr) || !dev) { g_fail = "CreateDevice"; d3d->Release(); return false; }
 
     void** vtbl = *reinterpret_cast<void***>(dev);
     void* endscene = vtbl[42];
     void* reset    = vtbl[16];
     dev->Release();
     d3d->Release();
-    DestroyWindow(wnd);
 
-    if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED) return false;
-    if (MH_CreateHook(endscene, (void*)&hk_EndScene, (void**)&o_EndScene) != MH_OK) return false;
+    if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED) {
+        g_fail = "MH_Initialize"; return false;
+    }
+    if (MH_CreateHook(endscene, (void*)&hk_EndScene, (void**)&o_EndScene) != MH_OK) {
+        g_fail = "MH_CreateHook(EndScene)"; return false;
+    }
     MH_CreateHook(reset, (void*)&hk_Reset, (void**)&o_Reset);   // best-effort
-    if (MH_EnableHook(endscene) != MH_OK) { o_EndScene = nullptr; return false; }
+    if (MH_EnableHook(endscene) != MH_OK) { g_fail = "MH_EnableHook"; o_EndScene = nullptr; return false; }
     MH_EnableHook(reset);
     return true;
 }

@@ -303,13 +303,16 @@ DWORD WINAPI worker(LPVOID) {
     logf("AC2AP v0 started. save=%s server=%s slot=%s ap=%d",
          g_save_path.c_str(), g_server.c_str(), g_slot.c_str(), (int)g_ap_enabled);
 
-    // In-game overlay (D3D9 + ImGui): opt-in, off by default. Failure = overlay stays off.
+    // In-game overlay (D3D9 + ImGui): opt-in, off by default. Installed lazily in the loop
+    // (the game's D3D device / fullscreen state may not be ready at startup). Failure = off.
     bool overlay_on = ini_get(ini, "enable_overlay", "0") == "1";
-    if (overlay_on) {
-        bool ok = ac2ap::overlay::install(true);
-        logf("overlay: %s", ok ? "installed (D3D9 hook active)" : "not installed");
-        if (ok) ac2ap::overlay::toast("AC2AP overlay ready", IM_COL32(120, 200, 255, 255), 4000);
-    }
+    bool overlay_installed = false;
+    int overlay_tries = 0;
+    if (overlay_on) ac2ap::overlay::set_defaults(g_server, g_slot, g_password);  // prefill the menu
+    // Pre-fill the in-game connection form with the ini values.
+    strncpy(ac2ap::overlay::g_conn.server, g_server.c_str(), sizeof(ac2ap::overlay::g_conn.server) - 1);
+    strncpy(ac2ap::overlay::g_conn.slot, g_slot.c_str(), sizeof(ac2ap::overlay::g_conn.slot) - 1);
+    strncpy(ac2ap::overlay::g_conn.password, g_password.c_str(), sizeof(ac2ap::overlay::g_conn.password) - 1);
 
     auto seen = load_seen();
     auto id_map = load_map();
@@ -340,9 +343,15 @@ DWORD WINAPI worker(LPVOID) {
     bool grip_enabled = false;
     float grip_start = 0.0f;         // starting floor 0..1 (slot_data, percent/100)
     std::set<int> grip_indexes;      // indexes of received Progressive Templar Grip items
-    if (g_ap_enabled) {
+    // (Re)connects the AP client with new params. Callable at startup AND from the in-game
+    // connection menu (runtime reconnect). Updates the globals the handlers read.
+    auto connect_ap = [&](const std::string& server, const std::string& slot, const std::string& pw) {
+        g_server = server; g_slot = slot; g_password = pw;
+        ap_authenticated = false;
         std::string uuid = ap_get_uuid(g_dir + "\\AC2AP_uuid.txt");
         ap.reset(new APClient(uuid, "Assassin's Creed II", g_server));
+        logf("AP: connecting to %s slot '%s'", g_server.c_str(), g_slot.c_str());
+        ac2ap::overlay::toast("Connecting to " + g_server + " ...", IM_COL32(230, 220, 130, 255), 3000);
         ap->set_room_info_handler([&]() {
             logf("AP: room info, connecting slot '%s'", g_slot.c_str());
             ap->ConnectSlot(g_slot, g_password, 0b111, {}, {0, 6, 7});
@@ -350,7 +359,9 @@ DWORD WINAPI worker(LPVOID) {
         ap->set_slot_connected_handler([&](const nlohmann::json& slot_data) {
             logf("AP: slot connected!");
             ap_authenticated = true;
-            ac2ap::overlay::toast("Connected to Archipelago", IM_COL32(120, 200, 255, 255), 4000);
+            ac2ap::overlay::toast("Connected as " + g_slot + "!",
+                                  IM_COL32(120, 230, 120, 255), 6000);
+            ac2ap::overlay::g_menu_open = false;   // close the connection menu on success
             if (slot_data.contains("death_link") && slot_data["death_link"].get<bool>()) {
                 death_link = true;
                 ap->ConnectUpdate(false, 0, true, {"DeathLink"});
@@ -376,7 +387,9 @@ DWORD WINAPI worker(LPVOID) {
             logf("AP: DeathLink received from '%s'", src.c_str());
         });
         ap->set_slot_refused_handler([&](const std::list<std::string>& errs) {
-            for (auto& e : errs) logf("AP: connection refused: %s", e.c_str());
+            std::string why;
+            for (auto& e : errs) { logf("AP: connection refused: %s", e.c_str()); if (why.empty()) why = e; }
+            ac2ap::overlay::toast("Connection refused: " + why, IM_COL32(240, 120, 120, 255), 6000);
         });
         ap->set_items_received_handler([&](const std::list<APClient::NetworkItem>& items) {
             for (auto& it : items) {
@@ -396,14 +409,54 @@ DWORD WINAPI worker(LPVOID) {
         });
         ap->set_socket_disconnected_handler([&]() {
             logf("AP: socket disconnected");
+            if (ap_authenticated)
+                ac2ap::overlay::toast("Disconnected from server", IM_COL32(240, 160, 120, 255), 5000);
             ap_authenticated = false;
         });
-    }
+        ap->set_socket_error_handler([&](const std::string& msg) {
+            static ULONGLONG last = 0;   // debounce: the socket retries every second
+            logf("AP: socket error: %s", msg.c_str());
+            ULONGLONG now = GetTickCount64();
+            if (now - last > 6000) {
+                last = now;
+                ac2ap::overlay::toast("Can't reach server: " + msg, IM_COL32(240, 120, 120, 255), 5000);
+            }
+        });
+    };
+    if (g_ap_enabled) connect_ap(g_server, g_slot, g_password);
 #endif
 
     FILETIME last_mtime{};
     for (;;) {
         Sleep(250);
+
+        // 0-) lazy overlay install: retry until the game's graphics are up (~30 tries = ~30s)
+        if (overlay_on && !overlay_installed && overlay_tries < 30) {
+            overlay_tries++;
+            if (ac2ap::overlay::install(true)) {
+                overlay_installed = true;
+                logf("overlay: installed (D3D9 hook active, try %d)", overlay_tries);
+                ac2ap::overlay::toast("AC2AP overlay ready", IM_COL32(120, 200, 255, 255), 4000);
+            } else if (overlay_tries == 30) {
+                logf("overlay: gave up after %d tries (last fail: %s)",
+                     overlay_tries, ac2ap::overlay::g_fail);
+            }
+            Sleep(1000);   // space out the retries
+        }
+
+        // 0-bis) connection request from the in-game menu (INSERT -> form -> Connect)
+#ifdef AC2AP_WITH_AP
+        if (ac2ap::overlay::g_conn.requested) {
+            ac2ap::overlay::g_conn.requested = false;
+            connect_ap(ac2ap::overlay::g_conn.server, ac2ap::overlay::g_conn.slot,
+                       ac2ap::overlay::g_conn.password);
+            g_ap_enabled = true;
+            WritePrivateProfileStringA("ac2ap", "server", g_server.c_str(), ini.c_str());
+            WritePrivateProfileStringA("ac2ap", "slot", g_slot.c_str(), ini.c_str());
+            WritePrivateProfileStringA("ac2ap", "password", g_password.c_str(), ini.c_str());
+        }
+        ac2ap::overlay::g_conn.connected = ap_authenticated;
+#endif
 
         // 0) health diagnostic: logs once the hook has captured the object
         {
