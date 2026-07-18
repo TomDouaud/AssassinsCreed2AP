@@ -41,8 +41,10 @@ So to be totally clear, if this cause to much problem that this AP is vibe coded
 | Florins + trap items (Templar Tax, Bad Medicine, Wanted) | ✅ |
 | Region gating by story progression | ✅ |
 | DeathLink | ✅ |
+| In-game overlay (toasts + F8 connection menu, D3D9) | ✅ |
+| Templar Grip (reverse-notoriety) | 🧪 experimental / off by default |
 | Viewpoints, glyphs, tombs, secondary missions | 🚧 not yet reliable / disabled |
-| Villa renovations | 🚧 in progress |
+| Villa renovations | 🚧 not detectable in this engine (shelved) |
 
 Known issues and limitations are tracked internally; this alpha intentionally
 disables anything not yet proven stable.
@@ -67,16 +69,15 @@ the source tree.
    - `AC2AP.asi`
    - `AC2AP.ini`
    - `AC2AP_map.txt`
-3. Edit `AC2AP.ini`:
-   ```ini
-   [ac2ap]
-   save_path=          ; blank = auto-detect (Ubisoft Connect, then Skidrow)
-   server=archipelago.gg:38281
-   slot=YourSlotName
-   password=
-   enable_health_hook=1
-   ```
-4. Launch the game. The client logs to `AC2AP.log` next to the `.asi`.
+3. Launch the game and load a save. You don't need to edit `AC2AP.ini` — the save
+   path auto-detects and the connection is done in-game.
+4. Press **F8** (or **INSERT**) to open the connection menu, type your **server**
+   (`host:port`), **slot** and **password**, then click **Connect**. A green
+   "Connected" toast confirms it. (Ezio stays still while the menu is open; your
+   values are saved back to `AC2AP.ini`.)
+
+Received items and checks show up as on-screen toasts. The client also logs to
+`AC2AP.log` next to the `.asi`.
 
 ## Build (the ASI)
 
