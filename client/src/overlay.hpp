@@ -8,6 +8,8 @@
 #pragma once
 #include <windows.h>
 #include <d3d9.h>
+#define DIRECTINPUT_VERSION 0x0800
+#include <dinput.h>
 #include <MinHook.h>
 
 #include <deque>
@@ -166,6 +168,54 @@ inline void poll_toggle() {
     prev_down = down;
 }
 
+// VK -> ImGuiKey for the keys InputText navigation/shortcuts need (the rest come as characters).
+inline ImGuiKey vk_to_key(int vk) {
+    switch (vk) {
+        case VK_BACK:   return ImGuiKey_Backspace;
+        case VK_DELETE: return ImGuiKey_Delete;
+        case VK_TAB:    return ImGuiKey_Tab;
+        case VK_RETURN: return ImGuiKey_Enter;
+        case VK_LEFT:   return ImGuiKey_LeftArrow;
+        case VK_RIGHT:  return ImGuiKey_RightArrow;
+        case VK_UP:     return ImGuiKey_UpArrow;
+        case VK_DOWN:   return ImGuiKey_DownArrow;
+        case VK_HOME:   return ImGuiKey_Home;
+        case VK_END:    return ImGuiKey_End;
+        case VK_ESCAPE: return ImGuiKey_Escape;
+        case 'A':       return ImGuiKey_A;   // Ctrl+A select all
+        case 'C':       return ImGuiKey_C;   // Ctrl+C copy
+        case 'V':       return ImGuiKey_V;   // Ctrl+V paste
+        case 'X':       return ImGuiKey_X;   // Ctrl+X cut
+        default:        return ImGuiKey_None;
+    }
+}
+
+// DirectInput game: no WM_CHAR reaches us, so translate keystrokes to ImGui manually.
+// ToUnicode() honours the keyboard layout + shift/caps. Characters are fed on key-down edge;
+// nav/edit keys are fed continuously (so ImGui auto-repeat works, e.g. holding Backspace).
+inline void poll_keyboard() {
+    ImGuiIO& io = ImGui::GetIO();
+    bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    bool ctrl  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+    io.AddKeyEvent(ImGuiMod_Shift, shift);
+    io.AddKeyEvent(ImGuiMod_Ctrl, ctrl);
+    BYTE ks[256] = {0};
+    if (shift) ks[VK_SHIFT] = 0x80;
+    if (GetKeyState(VK_CAPITAL) & 1) ks[VK_CAPITAL] = 0x01;
+    static bool prev[256] = {false};
+    for (int vk = 0x08; vk <= 0xFE; vk++) {
+        bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
+        ImGuiKey ik = vk_to_key(vk);
+        if (ik != ImGuiKey_None) io.AddKeyEvent(ik, down);
+        if (down && !prev[vk] && !ctrl) {            // typed character (skip Ctrl-combos)
+            WCHAR buf[4]; UINT sc = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
+            int n = ToUnicode(vk, sc, ks, buf, 4, 0);
+            if (n == 1 && buf[0] >= 0x20 && buf[0] != 0x7F) io.AddInputCharacter(buf[0]);
+        }
+        prev[vk] = down;
+    }
+}
+
 inline void render_frame(IDirect3DDevice9* dev) {
     __try {
         if (!g_imgui_ready) init_imgui(dev);
@@ -182,6 +232,7 @@ inline void render_frame(IDirect3DDevice9* dev) {
             io.AddMousePosEvent((float)p.x, (float)p.y);
             io.AddMouseButtonEvent(0, (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
             io.AddMouseButtonEvent(1, (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0);
+            poll_keyboard();
         }
         ImGui::NewFrame();
         render_toasts();
@@ -203,6 +254,43 @@ inline HRESULT WINAPI hk_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp)
     HRESULT hr = o_Reset(dev, pp);
     if (g_imgui_ready) ImGui_ImplDX9_CreateDeviceObjects();
     return hr;
+}
+
+// --- DirectInput block: blank keyboard/mouse input to the GAME while the menu is open, so
+// Ezio/camera don't move as you type. AC2 reads input via DirectInput (that's why our overlay
+// must poll keys itself); hooking the device's GetDeviceState/Data via its shared vtable covers
+// every device (keyboard + mouse) at once. Best-effort: failure just leaves the caveat. --------
+using GetDeviceState_t = HRESULT(WINAPI*)(IDirectInputDevice8*, DWORD, LPVOID);
+using GetDeviceData_t  = HRESULT(WINAPI*)(IDirectInputDevice8*, DWORD, LPDIDEVICEOBJECTDATA, LPDWORD, DWORD);
+inline GetDeviceState_t o_GetDeviceState = nullptr;
+inline GetDeviceData_t  o_GetDeviceData  = nullptr;
+
+inline HRESULT WINAPI hk_GetDeviceState(IDirectInputDevice8* dev, DWORD cb, LPVOID data) {
+    HRESULT hr = o_GetDeviceState(dev, cb, data);
+    if (g_menu_open && data && cb) memset(data, 0, cb);   // game sees "no keys/movement"
+    return hr;
+}
+inline HRESULT WINAPI hk_GetDeviceData(IDirectInputDevice8* dev, DWORD cb, LPDIDEVICEOBJECTDATA rg,
+                                       LPDWORD pn, DWORD fl) {
+    if (g_menu_open) { if (pn) *pn = 0; return DI_OK; }   // no buffered events while menu open
+    return o_GetDeviceData(dev, cb, rg, pn, fl);
+}
+
+inline void install_dinput_block() {
+    IDirectInput8* di = nullptr;
+    if (FAILED(DirectInput8Create(GetModuleHandleA(nullptr), DIRECTINPUT_VERSION,
+                                  IID_IDirectInput8A, (void**)&di, nullptr)) || !di) return;
+    IDirectInputDevice8* kb = nullptr;
+    if (FAILED(di->CreateDevice(GUID_SysKeyboard, &kb, nullptr)) || !kb) { di->Release(); return; }
+    void** vt = *reinterpret_cast<void***>(kb);
+    void* gds = vt[9];    // GetDeviceState
+    void* gdd = vt[10];   // GetDeviceData
+    kb->Release();
+    di->Release();
+    if (MH_CreateHook(gds, (void*)&hk_GetDeviceState, (void**)&o_GetDeviceState) == MH_OK)
+        MH_EnableHook(gds);
+    if (MH_CreateHook(gdd, (void*)&hk_GetDeviceData, (void**)&o_GetDeviceData) == MH_OK)
+        MH_EnableHook(gdd);
 }
 
 // Reads the D3D9 device vtable via a throwaway device and hooks EndScene(42)/Reset(16).
@@ -251,6 +339,7 @@ inline bool install(bool enabled_from_ini) {
     MH_CreateHook(reset, (void*)&hk_Reset, (void**)&o_Reset);   // best-effort
     if (MH_EnableHook(endscene) != MH_OK) { g_fail = "MH_EnableHook"; o_EndScene = nullptr; return false; }
     MH_EnableHook(reset);
+    install_dinput_block();   // best-effort: blank game input while the menu is open
     return true;
 }
 

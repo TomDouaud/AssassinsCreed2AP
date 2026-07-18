@@ -23,7 +23,7 @@ set(IMGUI_SRC
 
 add_library(ac2ap_asi SHARED src/dllmain.cpp ${ZLIB_SRC} ${MINHOOK_SRC} ${IMGUI_SRC})
 set_target_properties(ac2ap_asi PROPERTIES OUTPUT_NAME "AC2AP" SUFFIX ".asi" PREFIX "")
-target_link_libraries(ac2ap_asi PRIVATE ws2_32 d3d9)
+target_link_libraries(ac2ap_asi PRIVATE ws2_32 d3d9 dinput8 dxguid)
 target_include_directories(ac2ap_asi PRIVATE ${DEPS}/minhook/include ${IMGUI} ${IMGUI}/backends)
 
 add_executable(test_records src/test_records.cpp)
