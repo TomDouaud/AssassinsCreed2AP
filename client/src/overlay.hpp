@@ -126,16 +126,11 @@ inline bool is_input_msg(UINT m) {
 }
 
 inline LRESULT CALLBACK hk_WndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
-    // INSERT toggles the menu.
-    if (msg == WM_KEYDOWN && w == VK_INSERT) {
-        g_menu_open = !g_menu_open;
-        return 0;
-    }
-    if (g_imgui_ready) {
-        ImGui_ImplWin32_WndProcHandler(h, msg, w, l);
-        // While the menu is open, keep input from reaching the game (no Ezio moving as you type).
-        if (g_menu_open && is_input_msg(msg)) return 0;
-    }
+    // Input reaches ImGui only via polling (poll_toggle/poll_keyboard + mouse injection), so it
+    // works identically on the DirectInput crack and on Ubisoft Connect. We deliberately do NOT
+    // feed ImGui from window messages here: Ubisoft delivers WM_CHAR/WM_KEYDOWN, which would
+    // double-inject (issue #1). We only swallow input messages to the game while the menu is open.
+    if (g_menu_open && is_input_msg(msg)) return 0;
     return CallWindowProcA(o_WndProc, h, msg, w, l);
 }
 
