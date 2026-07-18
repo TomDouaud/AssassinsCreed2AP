@@ -69,8 +69,10 @@ the source tree.
    - `AC2AP.asi`
    - `AC2AP.ini`
    - `AC2AP_map.txt`
-3. Launch the game and load a save. You don't need to edit `AC2AP.ini` — the save
-   path auto-detects and the connection is done in-game.
+3. Launch the game and load a save. The connection is done in-game, so no ini
+   editing is needed for that. The save path **auto-detects Ubisoft Connect and
+   Skidrow** installs; on any other setup, set `save_path=` in `AC2AP.ini` to your
+   `1.save` path (check `AC2AP.log` if the client can't find it).
 4. Press **F8** (or **INSERT**) to open the connection menu, type your **server**
    (`host:port`), **slot** and **password**, then click **Connect**. A green
    "Connected" toast confirms it. (Ezio stays still while the menu is open; your
