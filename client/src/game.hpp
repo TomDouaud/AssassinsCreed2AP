@@ -676,6 +676,28 @@ inline bool kill_player() {
     return safe_write(obj + 0xBC, &one, 1);   // Desync = death
 }
 
+// True when the game window is in the foreground (our process owns the focus). AC2 pauses
+// when unfocused, so a desync byte written then gets wiped on resume - gate DeathLink
+// application on this so a death received while unfocused is buffered and applied on refocus.
+inline bool is_game_focused() {
+    HWND fg = GetForegroundWindow();
+    if (!fg) return false;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(fg, &pid);
+    return pid == GetCurrentProcessId();
+}
+
+// Is Ezio Animus-DESYNCED (actually dead)? Reads the same [pHealth]+0xBC flag kill_player sets.
+// This is the correct death signal for DeathLink emission - unlike health==0, which is only the
+// low-health warning (Ezio can still take hits / act). Returns false if not in-game / not captured.
+inline bool is_desynced() {
+    resolve_health_addr();                    // ensure hook installed / Ezio captured
+    uintptr_t obj = (uintptr_t)g_health_obj;
+    if (!obj || obj < 0x10000) return false;
+    uint8_t b = 0;
+    return safe_read(obj + 0xBC, &b, 1) && b != 0;
+}
+
 // Sets health to 1 (Bad Medicine trap). false if out-of-game.
 inline bool cripple_health() { return set_health(1); }
 

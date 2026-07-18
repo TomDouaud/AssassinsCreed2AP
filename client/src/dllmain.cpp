@@ -380,7 +380,7 @@ DWORD WINAPI worker(LPVOID) {
     bool ap_authenticated = false;
     bool death_link = false;         // enabled via slot_data
     bool death_pending = false;      // a remote death to apply in-game
-    bool prev_alive = false;         // health tracking to detect the alive->dead transition
+    bool prev_desync = false;        // tracks the desync flag to detect the death transition
     // Templar Grip (reverse notoriety): floor = start - 25% per grip item received.
     // Grip items are counted by INDEX in the items_received handler (index-set = robust
     // against resync replays), not in apply_item (skipped indexes would be lost on restart).
@@ -676,29 +676,30 @@ DWORD WINAPI worker(LPVOID) {
         // 1a) DeathLink: death detection (send) + applying a received death
 #ifdef AC2AP_WITH_AP
         if (ap && ap_authenticated && death_link) {
-            uint32_t cur = 0, max = 0;
-            if (ac2ap::game::get_health(cur, max) && max > 0) {
-                bool alive = cur > 0;
-                if (prev_alive && !alive) {         // alive -> dead transition
-                    // debounce against double-emit (BUG-006): a single emission per death,
-                    // even if the hook transiently captures another dying entity.
-                    static ULONGLONG last_emit = 0;
-                    ULONGLONG now = GetTickCount64();
-                    if (now - last_emit > 15000) {
-                        last_emit = now;
-                        ap->Bounce({{"time", ap->get_server_time()},
-                                    {"cause", "Ezio has died"},
-                                    {"source", g_slot}}, {}, {}, {"DeathLink"});
-                        logf("AP: DeathLink emitted (Ezio dead)");
-                    }
+            // Emit on the Animus DESYNC flag ([pHealth]+0xBC), NOT health==0: at 0 HP Ezio is
+            // only in the low-health warning and can still take hits; desync is the real death,
+            // and it's exactly what a received DeathLink sets (issue #2).
+            bool desynced = ac2ap::game::is_desynced();
+            if (desynced && !prev_desync && !death_pending) {   // real death, not our applied one
+                static ULONGLONG last_emit = 0;
+                ULONGLONG now = GetTickCount64();
+                if (now - last_emit > 15000) {                  // debounce (BUG-006)
+                    last_emit = now;
+                    ap->Bounce({{"time", ap->get_server_time()},
+                                {"cause", "Ezio has desynchronized"},
+                                {"source", g_slot}}, {}, {}, {"DeathLink"});
+                    logf("AP: DeathLink emitted (Ezio desynced)");
                 }
-                prev_alive = alive;
             }
-            if (death_pending) {
+            prev_desync = desynced;
+            // Apply a received death only while the game is focused: unfocused = paused, and the
+            // desync byte would be wiped on resume (issue: friend's unfocused DeathLink not
+            // counted). Buffered in death_pending until the player refocuses.
+            if (death_pending && ac2ap::game::is_game_focused()) {
                 if (ac2ap::game::kill_player()) {
-                    logf("DeathLink applied: Ezio killed");
+                    logf("DeathLink applied: Ezio killed (focused)");
                     death_pending = false;
-                    prev_alive = false;             // don't re-emit our own death
+                    prev_desync = true;             // don't re-emit our own applied death
                 }
             }
         }
