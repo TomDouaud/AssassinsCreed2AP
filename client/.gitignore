@@ -3,3 +3,4 @@ deps/
 dist/AC2AP.asi
 *.log
 AC2AP_state.txt
+dist/*.zip

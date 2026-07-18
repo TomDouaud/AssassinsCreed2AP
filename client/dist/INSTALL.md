@@ -1,0 +1,47 @@
+# AC2AP — Install & Play (alpha)
+
+A multiworld randomizer for **Assassin's Creed II** on the
+[Archipelago](https://archipelago.gg) framework. This package is **pre-compiled** —
+you do NOT need to build anything.
+
+## What you need
+- **Assassin's Creed II** for PC (build 1.01, 32-bit `AssassinsCreedIIGame.exe`).
+- An **ASI loader** so the game loads `.asi` mods — e.g.
+  [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases):
+  download `dinput8.dll` (or `winmm.dll`) and drop it next to the game `.exe`.
+- **Archipelago** 0.6.7+ ([download](https://github.com/ArchipelagoMW/Archipelago/releases)).
+
+## 1. Install the world (once)
+Put **`ac2.apworld`** into your Archipelago `custom_worlds/` folder.
+Then generate a game (or join one someone hosts) with an `ac2` YAML — the
+Archipelago launcher's "Generate Template Options" gives you a starting YAML for
+"Assassin's Creed II".
+
+## 2. Install the client (once)
+Copy these three files into the game's ASI folder (the folder the loader reads —
+usually a `scripts\` folder next to the `.exe`, or next to the loader):
+- `AC2AP.asi`
+- `AC2AP.ini`
+- `AC2AP_map.txt`
+
+The connection is done in-game (F8), so you don't edit the ini for that. The save
+path **auto-detects only Ubisoft Connect and Skidrow** installs — if you use a
+different setup and the client can't find your save (see `AC2AP.log`), open
+`AC2AP.ini` and set `save_path=` to your `1.save` file's full path.
+
+## 3. Play
+1. Launch the game and load a save.
+2. Wait a few seconds — a blue **"AC2AP overlay ready"** message appears top-right.
+3. Press **F8** (or **INSERT**) to open the connection menu.
+4. Type your **server** (`host:port`), **slot** (your player name), and **password**
+   if any, then click **Connect**. (Ezio stays still while the menu is open.)
+5. A green **"Connected as ... !"** message confirms it. Play — completing checks
+   sends items to the multiworld, and received items pop up as toasts.
+
+## Notes
+- This is an early **alpha**. See the project's README / Known Issues for what's
+  enabled and what's experimental (e.g. Templar Grip).
+- If nothing loads: make sure the ASI loader is installed and the three client
+  files are in the folder the loader actually scans.
+- Assassin's Creed II is a trademark of Ubisoft. This is an unofficial fan mod,
+  not affiliated with Ubisoft, and ships no game assets.
