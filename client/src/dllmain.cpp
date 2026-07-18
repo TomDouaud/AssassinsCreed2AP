@@ -552,6 +552,12 @@ DWORD WINAPI worker(LPVOID) {
                 else if (op == "tax") done = ac2ap::game::tax_money((int)arg);
                 else if (op == "money") done = ac2ap::game::add_money((int)arg);
                 else if (op == "kill") done = ac2ap::game::kill_player();
+                else if (op == "dlrecv") {   // simulate receiving a DeathLink (test buffering + focus-gating)
+#ifdef AC2AP_WITH_AP
+                    death_pending = true;
+#endif
+                    done = true;
+                }
                 else if (op == "noto") done = ac2ap::game::set_notoriety((float)arg / 100.0f);
                 else if (op == "nnoto") done = ac2ap::game::call_set_notoriety((float)arg / 100.0f);  // native SetNotoriety
                 else if (op == "smoke")  done = ac2ap::game::set_consumable(ac2ap::game::consumable::SMOKE, (uint32_t)arg);
@@ -692,15 +698,16 @@ DWORD WINAPI worker(LPVOID) {
                 }
             }
             prev_desync = desynced;
-            // Apply a received death only while the game is focused: unfocused = paused, and the
-            // desync byte would be wiped on resume (issue: friend's unfocused DeathLink not
-            // counted). Buffered in death_pending until the player refocuses.
-            if (death_pending && ac2ap::game::is_game_focused()) {
-                if (ac2ap::game::kill_player()) {
-                    logf("DeathLink applied: Ezio killed (focused)");
-                    death_pending = false;
-                    prev_desync = true;             // don't re-emit our own applied death
-                }
+        }
+        // Apply a received/pending death only while the game is FOCUSED (outside the death_link
+        // gate so the `dlrecv` debug cmd can drive it): unfocused = paused, and the desync byte
+        // written then is wiped on resume, so the death was lost (friend's unfocused report).
+        // Buffered in death_pending until the player refocuses.
+        if (death_pending && ac2ap::game::is_game_focused()) {
+            if (ac2ap::game::kill_player()) {
+                logf("DeathLink applied: Ezio killed (focused)");
+                death_pending = false;
+                prev_desync = true;                 // don't re-emit our own applied death
             }
         }
 #endif
