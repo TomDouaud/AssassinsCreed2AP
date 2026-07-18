@@ -407,6 +407,18 @@ DWORD WINAPI worker(LPVOID) {
                 }
             }
         });
+        // "Sent X -> Player": the server broadcasts an ItemSend for every check. Toast the ones
+        // we found that go to someone else (our own items are already toasted on receipt).
+        ap->set_print_json_handler([&](const APClient::PrintJSONArgs& args) {
+            if (args.type != "ItemSend" || !args.item || !args.receiving) return;
+            int me = ap->get_player_number();
+            if (args.item->player != me) return;          // only items WE found
+            int recv = *args.receiving;
+            if (recv == me) return;                        // our own -> handled by items_received
+            std::string name = ap->get_item_name(args.item->item, ap->get_player_game(recv));
+            std::string who = ap->get_player_alias(recv);
+            ac2ap::overlay::toast("Sent " + name + " -> " + who, IM_COL32(180, 200, 255, 255), 5000);
+        });
         ap->set_socket_disconnected_handler([&]() {
             logf("AP: socket disconnected");
             if (ap_authenticated)
