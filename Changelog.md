@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2 — alpha
+
+- "Save found" / "SAVE NOT FOUND" toast at startup; Ubisoft Connect save path fixed
+  (`Program Files (x86)\Ubisoft\...\4\1.save`, first profile), no-quotes note.
+- Fix #1: double text input in the F8 menu on Ubisoft Connect.
+- DeathLink: apply a received death only while the game is focused (unfocused was
+  losing it), and emit on a real death (low-HP then the health object desyncs) instead
+  of the survivable 0-HP warning (#2). Emission is best-effort (an instant fall can be
+  missed); receiving/buffering is reliable.
+- Overlay: received-item toasts colored by AP classification (trap/progression/useful/
+  filler), longer toast duration, and a persistent bottom-left status line
+  (connection + checks/items counters).
+
 ## 0.1.1 — alpha
 
 - In-game overlay: connection menu (F8/INSERT) with server/slot/password fields,
