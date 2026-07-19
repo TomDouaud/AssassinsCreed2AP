@@ -533,6 +533,47 @@ inline uintptr_t resolve_health_addr(uintptr_t* max_out = nullptr) {
     return obj + 0x58;                     // Current Health = [pHealth]+58
 }
 
+// --- SetHealth hook (reliable death detection; found 19/07 via HWBP + Ghidra) ----------------
+// __thiscall SetHealth(this, int newHP) at base+RVA 0x11FE0B0 (1.01 build). Ghidra decompile
+// shows a REAL death calls it with newHP < 0, which is what sets the desync flag [this+0xBC]=1
+// (the same flag kill_player writes). Hooking the call itself catches EVERY death - including
+// instant falls that the 250 ms health poll misses. Guards go through the same function, so
+// the detour filters this == g_health_obj (Ezio's captured health object).
+constexpr uintptr_t SETHEALTH_RVA = 0x11FE0B0;
+inline void* g_sethealth_tramp = nullptr;
+inline volatile LONG g_death_hook_flag = 0;    // set on Ezio SetHealth(hp<0); worker consumes
+inline volatile LONG g_death_hook_any = 0;     // DIAG: every hp<0 call, any entity. If guard
+                                               // kills never bump it, the function is player-only
+                                               // and the g_health_obj filter can be dropped.
+inline bool g_sethealth_installed = false;
+
+inline void __fastcall sethealth_detour(void* thisp, void* /*edx*/, int hp) {
+    if (hp < 0) {
+        InterlockedIncrement(&g_death_hook_any);
+        if (thisp == (void*)g_health_obj)
+            InterlockedExchange(&g_death_hook_flag, 1);
+    }
+    ((void(__fastcall*)(void*, void*, int))g_sethealth_tramp)(thisp, nullptr, hp);
+}
+
+inline bool install_sethealth_hook() {
+    if (g_sethealth_installed) return true;
+    if (!g_health_hook_enabled) return false;  // same opt-in gate as the health hook
+    static bool tried = false;
+    if (tried) return false;                   // one attempt: prologue mismatch = wrong build
+    tried = true;
+    uint8_t* p = (uint8_t*)((uintptr_t)GetModuleHandleA(nullptr) + SETHEALTH_RVA);
+    // exact 1.01 prologue (push ebp; mov ebp,esp; push esi; mov esi,ecx; mov eax,[esi+58]):
+    // the RVA is build-specific, so never patch if the bytes don't match.
+    static const uint8_t PRO[8] = {0x55, 0x8B, 0xEC, 0x56, 0x8B, 0xF1, 0x8B, 0x46};
+    if (memcmp(p, PRO, sizeof(PRO)) != 0) return false;
+    if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED) return false;
+    if (MH_CreateHook((void*)p, (void*)&sethealth_detour, &g_sethealth_tramp) != MH_OK) return false;
+    if (MH_EnableHook((void*)p) != MH_OK) return false;
+    g_sethealth_installed = true;
+    return true;
+}
+
 // --- Notoriety hook (Wanted trap / Templar Grip) -------------------------------
 // Same principle as health: notoriety (float 0=None..1=max) lives in the
 // NotorietyManager, reached via ecx in the getter function:

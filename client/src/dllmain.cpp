@@ -412,6 +412,7 @@ DWORD WINAPI worker(LPVOID) {
     bool death_link = false;         // enabled via slot_data
     bool death_pending = false;      // a remote death to apply in-game
     bool prev_desync = false;        // "armed": Ezio is at 0 HP (one hit from a real desync/death)
+    ULONGLONG dl_applied_at = 0;     // when we last applied a received death (echo suppression)
     // Templar Grip (reverse notoriety): floor = start - 25% per grip item received.
     // Grip items are counted by INDEX in the items_received handler (index-set = robust
     // against resync replays), not in apply_item (skipped indexes would be lost on restart).
@@ -612,6 +613,12 @@ DWORD WINAPI worker(LPVOID) {
                 else if (op == "tax") done = ac2ap::game::tax_money((int)arg);
                 else if (op == "money") done = ac2ap::game::add_money((int)arg);
                 else if (op == "kill") done = ac2ap::game::kill_player();
+                else if (op == "haddr") {   // logs the health object -> HWBP target for the death-writer hunt
+                    uintptr_t hp = ac2ap::game::resolve_health_addr();
+                    logf("HADDR curHP@%08X (hwbp this addr)  obj@%08X",
+                         (unsigned)hp, (unsigned)(hp ? hp - 0x58 : 0));
+                    done = (hp != 0);
+                }
                 else if (op == "hmon") { g_hmon = (arg != 0) || s1.empty(); done = true;
                     logf("HMON %s", g_hmon ? "on" : "off"); }
                 else if (op == "dlrecv") {   // simulate receiving a DeathLink (test buffering + focus-gating)
@@ -744,30 +751,47 @@ DWORD WINAPI worker(LPVOID) {
         // 1a) DeathLink: death detection (send) + applying a received death
 #ifdef AC2AP_WITH_AP
         if (ap && ap_authenticated && death_link) {
-            // Real death = Ezio was at 0 HP (low-health warning, max still valid) and then the
-            // health object gets INVALIDATED (max leaves the plausible range = desync/respawn).
-            // This distinguishes a real death from the 0-HP warning he can survive (issue #2):
-            // measured live - warning stays cur=0/max=40, death flips max to garbage.
+            static ULONGLONG last_emit = 0;      // shared debounce, hook + fallback (BUG-006)
+            auto emit_death = [&](const char* how) {
+                ULONGLONG now = GetTickCount64();
+                if (now - last_emit <= 15000) return;
+                if (dl_applied_at && now - dl_applied_at <= 10000) return;  // echo of an applied death
+                last_emit = now;
+                ap->Bounce({{"time", ap->get_server_time()},
+                            {"cause", "Ezio has desynchronized"},
+                            {"source", g_slot}}, {}, {}, {"DeathLink"});
+                logf("AP: DeathLink emitted (Ezio died, %s)", how);
+            };
+            // PRIMARY: SetHealth hook (HWBP + Ghidra, 19/07). A real death calls
+            // SetHealth(hp < 0) - catches every death, including instant falls the
+            // 250 ms poll misses. Filtered to Ezio's health object in the detour.
+            static bool sh_logged = false;
+            if (ac2ap::game::install_sethealth_hook() && !sh_logged) {
+                logf("SetHealth hook installed (death detection)");
+                sh_logged = true;
+            }
+            if (InterlockedExchange(&ac2ap::game::g_death_hook_flag, 0)) {
+                if (!death_pending) emit_death("SetHealth hook");
+            }
+            {   // DIAG: does SetHealth(hp<0) fire for OTHER entities (guard kills)?
+                static LONG prev_any = 0;
+                LONG a = ac2ap::game::g_death_hook_any;
+                if (a != prev_any) { logf("DIAG SetHealth hp<0 call #%ld (any entity)", a); prev_any = a; }
+            }
+            // FALLBACK (kept in case the hook could not install - wrong build/prologue):
+            // Ezio at low HP, then the health object gets INVALIDATED (max leaves the
+            // plausible range) = real death, not the survivable 0-HP warning (issue #2).
             uint32_t cur = 0, max = 0;
             bool valid = ac2ap::game::get_health(cur, max) && max >= 1 && max <= 200;
             if (valid) {
-                // "armed" while at low HP (a hit from death). <=4 not ==0: the 250 ms poll can
-                // miss the exact 0 tick, so arm across the whole death-danger zone. Best-effort:
-                // an instant fall never lowers the read health, so it can't be caught this way.
                 prev_desync = (cur <= 4);
             } else if (prev_desync && !death_pending) {
-                // object invalidated right after 0 HP -> real death (not our own applied one)
                 prev_desync = false;
-                static ULONGLONG last_emit = 0;
-                ULONGLONG now = GetTickCount64();
-                if (now - last_emit > 15000) {       // debounce (BUG-006)
-                    last_emit = now;
-                    ap->Bounce({{"time", ap->get_server_time()},
-                                {"cause", "Ezio has desynchronized"},
-                                {"source", g_slot}}, {}, {}, {"DeathLink"});
-                    logf("AP: DeathLink emitted (Ezio died)");
-                }
+                emit_death("object invalidated");
             }
+        } else {
+            // death_link off/disconnected: drop any stale hook flag so it can't fire later
+            InterlockedExchange(&ac2ap::game::g_death_hook_flag, 0);
         }
         // Apply a received/pending death only while the game is FOCUSED (outside the death_link
         // gate so the `dlrecv` debug cmd can drive it): unfocused = paused, and the desync byte
@@ -777,6 +801,8 @@ DWORD WINAPI worker(LPVOID) {
             if (ac2ap::game::kill_player()) {
                 logf("DeathLink applied: Ezio killed (focused)");
                 death_pending = false;
+                dl_applied_at = GetTickCount64(); // suppress the echo (the engine may route the
+                                                  // applied death through SetHealth(hp<0) too)
                 prev_desync = false;                // not "armed" -> don't emit our own applied death
             }
         }

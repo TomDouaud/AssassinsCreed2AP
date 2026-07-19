@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Reliable DeathLink emission: a hook on the game's SetHealth routine (found via
+  hardware breakpoint + Ghidra decompilation) catches instant deaths (falls) that the
+  health poll missed; combat deaths keep the invalidation detector. Guard kills don't
+  false-positive; a received death is not echoed back (10 s suppression window).
+
 ## 0.1.2 — alpha
 
 - "Save found" / "SAVE NOT FOUND" toast at startup; Ubisoft Connect save path fixed
