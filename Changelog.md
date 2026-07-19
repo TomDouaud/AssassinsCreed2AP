@@ -10,8 +10,11 @@
   of the survivable 0-HP warning (#2). Emission is best-effort (an instant fall can be
   missed); receiving/buffering is reliable.
 - Overlay: received-item toasts colored by AP classification (trap/progression/useful/
-  filler), longer toast duration, and a persistent bottom-left status line
-  (connection + checks/items counters).
+  filler), longer toast duration, and a bottom-left status line. F9 cycles it: off →
+  overview (checks/items) → per-category breakdown (done/total for missions, feathers,
+  chests, viewpoints, ...), filtered to the categories enabled in your YAML.
+- On connect, every check already done in the save is re-sent (idempotent) and counted,
+  so the counters are retroactive and a fresh seed / restarted server is re-synced.
 
 ## 0.1.1 — alpha
 

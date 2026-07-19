@@ -15,6 +15,7 @@
 #include <deque>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "imgui.h"
 #include "backends/imgui_impl_dx9.h"
@@ -115,32 +116,65 @@ inline void render_menu() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Close", ImVec2(120, 0))) g_menu_open = false;
-    ImGui::TextDisabled("INSERT / F8: this menu   -   F9: status line");
+    ImGui::TextDisabled("INSERT / F8: this menu   -   F9: status / breakdown");
     ImGui::End();
 }
 
 // Persistent status line (bottom-left): shows the client is alive + connected + progress.
+// F9 cycles pages: 0 = off, 1 = overview (checks/items), 2 = per-category breakdown.
 inline int g_stat_checks = 0;   // locations checked this session (worker updates)
 inline int g_stat_items = 0;    // items received this session
-inline bool g_status_visible = false;   // optional; toggled with F9 (off by default)
+inline int g_status_page = 0;   // 0=off, 1=overview, 2=breakdown (cycled with F9)
+constexpr int STATUS_PAGES = 3;
 inline void set_stats(int checks, int items) { g_stat_checks = checks; g_stat_items = items; }
 
-inline void render_status() {
-    if (!g_status_visible) return;
+// Per-category progress (done/total), pushed by the worker into FIXED storage: the render
+// thread reads these concurrently, so no vector (realloc mid-iteration would crash). Names are
+// static string literals (stable pointers); scalar/pointer reads are atomic on x86 -> a race is
+// at worst a one-frame stale number, never a crash (same pattern as set_stats).
+constexpr int MAX_CATS = 16;
+inline int g_cat_n = 0;
+inline const char* g_cat_name[MAX_CATS] = {nullptr};
+inline int g_cat_done[MAX_CATS] = {0};
+inline int g_cat_total[MAX_CATS] = {0};
+inline void set_cats(int n, const char* const* names, const int* done, const int* total) {
+    if (n > MAX_CATS) n = MAX_CATS;
+    for (int i = 0; i < n; i++) { g_cat_name[i] = names[i]; g_cat_done[i] = done[i]; g_cat_total[i] = total[i]; }
+    g_cat_n = n;   // written last: render never indexes past what's already filled
+}
+
+inline void status_window_begin() {
     ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(10.0f, io.DisplaySize.y - 10.0f), ImGuiCond_Always, ImVec2(0, 1));
     ImGui::SetNextWindowBgAlpha(0.35f);
     ImGui::Begin("##ac2ap_status", nullptr, ImGuiWindowFlags_NoDecoration |
                  ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
                  ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs);
-    if (g_conn.connected) {
-        ImGui::TextColored(ImVec4(0.55f, 0.9f, 0.55f, 1), "AC2AP");
-        ImGui::SameLine();
-        ImGui::Text("%s  |  checks %d  |  items %d", g_conn.slot, g_stat_checks, g_stat_items);
-    } else {
+}
+
+inline void render_status() {
+    if (g_status_page == 0) return;
+    status_window_begin();
+    if (!g_conn.connected) {
         ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.4f, 1), "AC2AP");
         ImGui::SameLine();
         ImGui::TextDisabled("offline - press F8 to connect");
+        ImGui::End();
+        return;
+    }
+    ImGui::TextColored(ImVec4(0.55f, 0.9f, 0.55f, 1), "AC2AP");
+    ImGui::SameLine();
+    if (g_status_page == 1) {
+        ImGui::Text("%s  |  checks %d  |  items %d", g_conn.slot, g_stat_checks, g_stat_items);
+    } else {
+        ImGui::Text("%s  (F9)", g_conn.slot);
+        int n = g_cat_n;
+        for (int i = 0; i < n; i++) {
+            if (!g_cat_name[i] || g_cat_total[i] <= 0) continue;
+            bool full = g_cat_done[i] >= g_cat_total[i];
+            ImGui::TextColored(full ? ImVec4(0.55f, 0.9f, 0.55f, 1) : ImVec4(0.85f, 0.85f, 0.85f, 1),
+                               "%-11s %d/%d", g_cat_name[i], g_cat_done[i], g_cat_total[i]);
+        }
     }
     ImGui::End();
 }
@@ -184,8 +218,8 @@ inline void poll_toggle() {
     bool menu = (GetAsyncKeyState(VK_INSERT) & 0x8000) || (GetAsyncKeyState(VK_F8) & 0x8000);
     if (menu && !prev_menu) g_menu_open = !g_menu_open;
     prev_menu = menu;
-    bool status = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;   // F9 toggles the status line
-    if (status && !prev_status) g_status_visible = !g_status_visible;
+    bool status = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;   // F9 cycles status pages
+    if (status && !prev_status) g_status_page = (g_status_page + 1) % STATUS_PAGES;
     prev_status = status;
 }
 

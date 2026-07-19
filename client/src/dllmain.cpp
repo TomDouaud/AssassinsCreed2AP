@@ -317,6 +317,30 @@ const char* type_name(uint64_t t) {
     return "?";
 }
 
+// --- F9 breakdown: AP location id -> category. Ranges from worlds/ac2/Locations.py -----------
+constexpr int64_t AP_BASE = 20240002000LL;
+enum { CAT_MISSION, CAT_VIEWPOINT, CAT_FEATHER, CAT_GLYPH, CAT_SECONDARY,
+       CAT_TOMB, CAT_SHOP, CAT_VILLA, CAT_STATUE, CAT_CODEX, CAT_CHEST, CAT_N };
+static const char* CAT_NAMES[CAT_N] = {
+    "Missions", "Viewpoints", "Feathers", "Glyphs", "Secondary",
+    "Tombs", "Shop", "Villa", "Statues", "Codex", "Chests" };
+inline int cat_of(int64_t apid) {
+    int64_t off = apid - AP_BASE;
+    if (off < 0)     return -1;
+    if (off < 1000)  return CAT_MISSION;
+    if (off < 2000)  return CAT_VIEWPOINT;
+    if (off < 3000)  return CAT_FEATHER;
+    if (off < 4000)  return CAT_GLYPH;
+    if (off < 5000)  return CAT_SECONDARY;
+    if (off < 6000)  return CAT_TOMB;
+    if (off < 7000)  return CAT_SHOP;
+    if (off < 8000)  return CAT_VILLA;
+    if (off < 8300)  return CAT_STATUE;    // 8200 statues (8000/8100 district bundles unused)
+    if (off < 8400)  return CAT_CODEX;
+    if (off < 9000)  return CAT_SECONDARY; // 8400 = DLC liberations, grouped with secondary
+    return CAT_CHEST;
+}
+
 DWORD WINAPI worker(LPVOID) {
     std::string ini = g_dir + "\\AC2AP.ini";
     // Save to watch. Priority: explicit save_path in the ini > Ubisoft Connect auto-detect >
@@ -369,12 +393,17 @@ DWORD WINAPI worker(LPVOID) {
     logf("state loaded: %zu (type,id) known, map: %zu missions, %zu counted categories, goal=%08X",
          seen.size(), id_map.size(), counted.size(), goal_id);
 
+    // Per-category totals/done for the F9 breakdown. Filled on connect from the server's location
+    // set for our slot (missing + checked) so it reflects the YAML (only enabled categories show).
+    int cat_total[CAT_N] = {0}, cat_done[CAT_N] = {0};
+
     int stat_checks = 0, stat_items = 0;             // overlay status-line counters (this session)
     std::vector<int64_t> pending = load_pending();   // checks to send to the server
     if (!pending.empty()) logf("%zu checks pending send (previous session)", pending.size());
     std::vector<std::pair<int, int64_t>> item_queue;  // received items to apply (index, item)
     int applied_index = load_applied_index();
     bool first_pass = true;
+    bool resync_pending = false;   // set on connect: re-send every check already done in the save
     logf("items already applied: index <= %d", applied_index);
 
 #ifdef AC2AP_WITH_AP
@@ -405,6 +434,7 @@ DWORD WINAPI worker(LPVOID) {
         ap->set_slot_connected_handler([&](const nlohmann::json& slot_data) {
             logf("AP: slot connected!");
             ap_authenticated = true;
+            resync_pending = true;   // re-send all past checks + make the counter retroactive
             ac2ap::overlay::toast("Connected as " + g_slot + "!",
                                   IM_COL32(120, 230, 120, 255), 6000);
             ac2ap::overlay::g_menu_open = false;   // close the connection menu on success
@@ -523,6 +553,12 @@ DWORD WINAPI worker(LPVOID) {
         }
         ac2ap::overlay::g_conn.connected = ap_authenticated;
         ac2ap::overlay::set_stats(stat_checks, stat_items);
+        {   // push only the non-empty categories to the F9 breakdown
+            const char* names[CAT_N]; int done[CAT_N], total[CAT_N]; int n = 0;
+            for (int i = 0; i < CAT_N; i++)
+                if (cat_total[i] > 0) { names[n] = CAT_NAMES[i]; done[n] = cat_done[i]; total[n] = cat_total[i]; n++; }
+            ac2ap::overlay::set_cats(n, names, done, total);
+        }
 #endif
 
         // 0) health diagnostic: logs once the hook has captured the object
@@ -802,7 +838,7 @@ DWORD WINAPI worker(LPVOID) {
         WIN32_FILE_ATTRIBUTE_DATA fad;
         if (!GetFileAttributesExA(g_save_path.c_str(), GetFileExInfoStandard, &fad))
             continue;
-        if (CompareFileTime(&fad.ftLastWriteTime, &last_mtime) == 0 && !first_pass)
+        if (CompareFileTime(&fad.ftLastWriteTime, &last_mtime) == 0 && !first_pass && !resync_pending)
             continue;
         Sleep(300);  // let the game finish writing
 
@@ -857,6 +893,52 @@ DWORD WINAPI worker(LPVOID) {
             continue;
         }
 
+#ifdef AC2AP_WITH_AP
+        // Resync on connect: (re)send every check already done in this save, so the counter is
+        // retroactive and the server receives all past checks (needed on a fresh seed / after a
+        // server state loss). Idempotent: the server ignores locations it already has, and seen.txt
+        // still suppresses re-toasting. Runs once per connect.
+        if (resync_pending && ap && ap_authenticated) {
+            resync_pending = false;
+            // Locations this save proves done (all categories, before the seed filter).
+            std::set<int64_t> locs;
+            for (const auto& [k, cnt] : counts) {
+                auto it = id_map.find(k.id);
+                if (it != id_map.end()) locs.insert(it->second);
+            }
+            for (const auto& [id, apid] : presence)
+                if (buf_has_u32(buf, id)) locs.insert(apid);
+            auto resync_counted = [&](const char* cat, int count) {
+                auto it = counted.find(cat);
+                if (it == counted.end()) return;
+                for (int i = 0; i < count && i < (int)it->second.size(); i++)
+                    if (it->second[i]) locs.insert(it->second[i]);
+            };
+            resync_counted("VIEWPOINT", cur_vp);
+            resync_counted("CODEX", cur_codex);
+            resync_counted("FEATHER", cur_feather);
+
+            // The server tells us every location for our slot: missing + checked = the seed's
+            // locations (respects the YAML). Totals/done are computed against THAT, so disabled
+            // categories don't appear. done = server-checked + our save-detected ones in the seed
+            // (covers a fresh seed the server hasn't recorded yet).
+            std::set<int64_t> checked = ap->get_checked_locations();
+            std::set<int64_t> seed = ap->get_missing_locations();
+            seed.insert(checked.begin(), checked.end());
+            std::set<int64_t> done = checked;
+            for (auto id : locs) if (seed.count(id)) done.insert(id);
+
+            for (int i = 0; i < CAT_N; i++) { cat_total[i] = 0; cat_done[i] = 0; }
+            for (auto id : seed) { int c = cat_of(id); if (c >= 0) cat_total[c]++; }
+            for (auto id : done) { int c = cat_of(id); if (c >= 0) cat_done[c]++; }
+            stat_checks = (int)done.size();
+
+            for (auto id : locs) pending.push_back(id);   // re-send (idempotent) to sync the server
+            logf("AP: resync -> seed=%zu locs, done=%zu, %zu (re)sent",
+                 seed.size(), done.size(), locs.size());
+        }
+#endif
+
         bool queued = false;
         for (const auto& k : fresh) {
             logf("CHECK %s type=%016llX id=%08X", type_name(k.type),
@@ -865,7 +947,8 @@ DWORD WINAPI worker(LPVOID) {
             auto it = id_map.find(k.id);
             if (it != id_map.end()) {
                 pending.push_back(it->second);
-                queued = true; stat_checks++;
+                queued = true;
+                { int c = cat_of(it->second); if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; } }
                 logf("  -> location AP %lld queued", (long long)it->second);
 #ifdef AC2AP_WITH_AP
                 if (ap && ap_authenticated) {
@@ -882,7 +965,8 @@ DWORD WINAPI worker(LPVOID) {
             if (!buf_has_u32(buf, id)) continue;
             seen.insert(pk);
             pending.push_back(apid);
-            queued = true; stat_checks++;
+            queued = true;
+            { int c = cat_of(apid); if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; } }
             logf("CHECK PRESENCE id=%08X -> location AP %lld", id, (long long)apid);
         }
         save_seen(seen);
@@ -895,7 +979,8 @@ DWORD WINAPI worker(LPVOID) {
             for (int i = sent; i < count && i < (int)it->second.size(); i++) {
                 if (it->second[i]) {
                     pending.push_back(it->second[i]);
-                    queued = true; stat_checks++;
+                    queued = true;
+                    { int c = cat_of(it->second[i]); if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; } }
                     logf("CHECK %s #%d -> location AP %lld", cat, i + 1,
                          (long long)it->second[i]);
                 }
