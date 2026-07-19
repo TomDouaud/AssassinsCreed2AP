@@ -115,16 +115,18 @@ inline void render_menu() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Close", ImVec2(120, 0))) g_menu_open = false;
-    ImGui::TextDisabled("Press INSERT or F8 to toggle this menu.");
+    ImGui::TextDisabled("INSERT / F8: this menu   -   F9: status line");
     ImGui::End();
 }
 
 // Persistent status line (bottom-left): shows the client is alive + connected + progress.
 inline int g_stat_checks = 0;   // locations checked this session (worker updates)
 inline int g_stat_items = 0;    // items received this session
+inline bool g_status_visible = false;   // optional; toggled with F9 (off by default)
 inline void set_stats(int checks, int items) { g_stat_checks = checks; g_stat_items = items; }
 
 inline void render_status() {
+    if (!g_status_visible) return;
     ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(10.0f, io.DisplaySize.y - 10.0f), ImGuiCond_Always, ImVec2(0, 1));
     ImGui::SetNextWindowBgAlpha(0.35f);
@@ -178,13 +180,13 @@ inline void init_imgui(IDirect3DDevice9* dev) {
 // The game reads the keyboard via DirectInput, so WM_KEYDOWN never reaches our WndProc -
 // polling the async key state here is the reliable path.
 inline void poll_toggle() {
-    static bool prev_down = false;
-    bool down = (GetAsyncKeyState(VK_INSERT) & 0x8000) || (GetAsyncKeyState(VK_F8) & 0x8000);
-    if (down && !prev_down) {
-        g_menu_open = !g_menu_open;
-        toast(g_menu_open ? "menu: OPEN" : "menu: closed", IM_COL32(255, 180, 80, 255), 2000);
-    }
-    prev_down = down;
+    static bool prev_menu = false, prev_status = false;
+    bool menu = (GetAsyncKeyState(VK_INSERT) & 0x8000) || (GetAsyncKeyState(VK_F8) & 0x8000);
+    if (menu && !prev_menu) g_menu_open = !g_menu_open;
+    prev_menu = menu;
+    bool status = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;   // F9 toggles the status line
+    if (status && !prev_status) g_status_visible = !g_status_visible;
+    prev_status = status;
 }
 
 // VK -> ImGuiKey for the keys InputText navigation/shortcuts need (the rest come as characters).
