@@ -119,6 +119,30 @@ inline void render_menu() {
     ImGui::End();
 }
 
+// Persistent status line (bottom-left): shows the client is alive + connected + progress.
+inline int g_stat_checks = 0;   // locations checked this session (worker updates)
+inline int g_stat_items = 0;    // items received this session
+inline void set_stats(int checks, int items) { g_stat_checks = checks; g_stat_items = items; }
+
+inline void render_status() {
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(10.0f, io.DisplaySize.y - 10.0f), ImGuiCond_Always, ImVec2(0, 1));
+    ImGui::SetNextWindowBgAlpha(0.35f);
+    ImGui::Begin("##ac2ap_status", nullptr, ImGuiWindowFlags_NoDecoration |
+                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+                 ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs);
+    if (g_conn.connected) {
+        ImGui::TextColored(ImVec4(0.55f, 0.9f, 0.55f, 1), "AC2AP");
+        ImGui::SameLine();
+        ImGui::Text("%s  |  checks %d  |  items %d", g_conn.slot, g_stat_checks, g_stat_items);
+    } else {
+        ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.4f, 1), "AC2AP");
+        ImGui::SameLine();
+        ImGui::TextDisabled("offline - press F8 to connect");
+    }
+    ImGui::End();
+}
+
 // Is this a keyboard/mouse message we should swallow while the menu is open?
 inline bool is_input_msg(UINT m) {
     return (m >= WM_KEYFIRST && m <= WM_KEYLAST) || (m >= WM_MOUSEFIRST && m <= WM_MOUSELAST) ||
@@ -231,6 +255,7 @@ inline void render_frame(IDirect3DDevice9* dev) {
         }
         ImGui::NewFrame();
         render_toasts();
+        render_status();
         render_menu();
         ImGui::EndFrame();
         ImGui::Render();

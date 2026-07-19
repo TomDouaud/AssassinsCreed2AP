@@ -369,6 +369,7 @@ DWORD WINAPI worker(LPVOID) {
     logf("state loaded: %zu (type,id) known, map: %zu missions, %zu counted categories, goal=%08X",
          seen.size(), id_map.size(), counted.size(), goal_id);
 
+    int stat_checks = 0, stat_items = 0;             // overlay status-line counters (this session)
     std::vector<int64_t> pending = load_pending();   // checks to send to the server
     if (!pending.empty()) logf("%zu checks pending send (previous session)", pending.size());
     std::vector<std::pair<int, int64_t>> item_queue;  // received items to apply (index, item)
@@ -443,6 +444,7 @@ DWORD WINAPI worker(LPVOID) {
                 if (it.item == item_ids::PROGRESSIVE_TEMPLAR_GRIP)
                     grip_indexes.insert(it.index);
                 if (it.index > applied_index) {          // don't toast resync replays
+                    stat_items++;
                     std::string name = ap->get_item_name(it.item, ap->get_game());
                     std::string from = it.player > 0 ? ap->get_player_alias(it.player) : "";
                     std::string msg = "Received: " + name;
@@ -518,6 +520,7 @@ DWORD WINAPI worker(LPVOID) {
             WritePrivateProfileStringA("ac2ap", "password", g_password.c_str(), ini.c_str());
         }
         ac2ap::overlay::g_conn.connected = ap_authenticated;
+        ac2ap::overlay::set_stats(stat_checks, stat_items);
 #endif
 
         // 0) health diagnostic: logs once the hook has captured the object
@@ -860,7 +863,7 @@ DWORD WINAPI worker(LPVOID) {
             auto it = id_map.find(k.id);
             if (it != id_map.end()) {
                 pending.push_back(it->second);
-                queued = true;
+                queued = true; stat_checks++;
                 logf("  -> location AP %lld queued", (long long)it->second);
 #ifdef AC2AP_WITH_AP
                 if (ap && ap_authenticated) {
@@ -877,7 +880,7 @@ DWORD WINAPI worker(LPVOID) {
             if (!buf_has_u32(buf, id)) continue;
             seen.insert(pk);
             pending.push_back(apid);
-            queued = true;
+            queued = true; stat_checks++;
             logf("CHECK PRESENCE id=%08X -> location AP %lld", id, (long long)apid);
         }
         save_seen(seen);
@@ -890,7 +893,7 @@ DWORD WINAPI worker(LPVOID) {
             for (int i = sent; i < count && i < (int)it->second.size(); i++) {
                 if (it->second[i]) {
                     pending.push_back(it->second[i]);
-                    queued = true;
+                    queued = true; stat_checks++;
                     logf("CHECK %s #%d -> location AP %lld", cat, i + 1,
                          (long long)it->second[i]);
                 }
