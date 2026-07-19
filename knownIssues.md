@@ -23,6 +23,11 @@ This is an early alpha. Known limitations:
   bug). Treat as a curiosity, not a balanced mode.
 - **Wanted Trap may be inert.** Same root cause: writing the notoriety value without a
   game event does not force the hostile state.
+- **DeathLink emission is best-effort.** Receiving a death (and dying) is reliable, and
+  a death received while the game is unfocused is buffered and applied on refocus. But
+  *emitting* your own death is detected from the health object, which the engine does not
+  update for instant deaths (e.g. a fatal fall) — those can be missed. Combat deaths are
+  detected. A reliable emit needs hooking the game's death routine (planned).
 - **Build target.** Verified on the 1.01 build; other builds are untested.
 
 Found a bug? Please open an issue on the GitHub repository.
