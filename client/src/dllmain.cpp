@@ -447,14 +447,16 @@ DWORD WINAPI worker(LPVOID) {
                     stat_items++;
                     std::string name = ap->get_item_name(it.item, ap->get_game());
                     std::string from = it.player > 0 ? ap->get_player_alias(it.player) : "";
-                    std::string msg = "Received: " + name;
+                    // Category tag + color (ASCII text stands in for a per-item icon; the AP data
+                    // package ships no item art, so classification is the meaningful marker).
+                    const char* tag; ImU32 col;
+                    if (it.flags & 4)      { tag = "[Trap] ";        col = IM_COL32(240, 120, 120, 255); }
+                    else if (it.flags & 1) { tag = "[Progression] "; col = IM_COL32(255, 215, 90, 255); }
+                    else if (it.flags & 2) { tag = "[Useful] ";      col = IM_COL32(150, 200, 255, 255); }
+                    else                   { tag = "";               col = IM_COL32(160, 220, 160, 255); }
+                    std::string msg = std::string(tag) + "Received: " + name;
                     if (!from.empty() && it.player != ap->get_player_number())
                         msg += "  (from " + from + ")";
-                    // Color by AP item classification flags: trap / progression / useful / filler.
-                    ImU32 col = (it.flags & 4) ? IM_COL32(240, 120, 120, 255)   // trap = red
-                              : (it.flags & 1) ? IM_COL32(255, 215, 90, 255)    // progression = gold
-                              : (it.flags & 2) ? IM_COL32(150, 200, 255, 255)   // useful = blue
-                              :                  IM_COL32(160, 220, 160, 255);  // filler = green
                     ac2ap::overlay::toast(msg, col, 7000);
                 }
             }
