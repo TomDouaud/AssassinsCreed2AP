@@ -6,6 +6,9 @@ you do NOT need to build anything.
 
 ## What you need
 - **Assassin's Creed II** for PC (build 1.01, 32-bit `AssassinsCreedIIGame.exe`).
+- **An existing save on slot 1.** If this is a fresh install, play the game normally
+  (without AC2AP) at least until the **first autosave** — that creates the `1.save`
+  file the client watches. No save file yet = a red "SAVE NOT FOUND" toast.
 - An **ASI loader** so the game loads `.asi` mods — e.g.
   [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases):
   download `dinput8.dll` (or `winmm.dll`) and drop it next to the game `.exe`.

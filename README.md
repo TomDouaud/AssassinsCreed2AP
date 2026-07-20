@@ -73,6 +73,9 @@ the source tree.
    editing is needed for that. The save path **auto-detects Ubisoft Connect and
    Skidrow** installs — a green **"Save found"** toast confirms it (a red one means
    set `save_path` yourself). Notes:
+   - **A save must exist first.** On a fresh install, play normally (without
+     connecting) at least until the **first autosave** so the game creates the
+     save file — otherwise there is nothing to find.
    - Auto-detect uses **`1.save`** (slot 1). Play on that slot, or set `save_path`.
    - With **multiple Ubisoft profiles**, it picks the **first** profile folder that
      has a save — if that's the wrong account, set `save_path` in `AC2AP.ini`.
