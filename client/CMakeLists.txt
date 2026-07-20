@@ -34,10 +34,17 @@ foreach(t ac2ap_asi test_records)
 endforeach()
 
 if(AC2AP_WITH_AP)
+    # TLS: archipelago.gg rooms are WSS-only. Without OpenSSL the client speaks
+    # plaintext to a TLS endpoint and the server just closes ("End of file").
+    # OpenSSL x86 static comes from vcpkg (deps/vcpkg, gitignored):
+    #   deps/vcpkg/vcpkg.exe install openssl:x86-windows-static
+    set(OPENSSL_VCPKG ${DEPS}/vcpkg/installed/x86-windows-static)
+    if(NOT EXISTS ${OPENSSL_VCPKG}/lib/libssl.lib)
+        message(FATAL_ERROR "OpenSSL x86 static not found - run: deps/vcpkg/vcpkg.exe install openssl:x86-windows-static")
+    endif()
     target_compile_definitions(ac2ap_asi PRIVATE
         AC2AP_WITH_AP
         ASIO_STANDALONE
-        WSWRAP_NO_SSL
         AP_NO_SCHEMA
         _WEBSOCKETPP_CPP11_THREAD_
         _WEBSOCKETPP_CPP11_STL_
@@ -48,5 +55,10 @@ if(AC2AP_WITH_AP)
         ${DEPS}/websocketpp
         ${DEPS}/asio/asio/include
         ${DEPS}/json/include
-        ${DEPS}/zlib)
+        ${DEPS}/zlib
+        ${OPENSSL_VCPKG}/include)
+    target_link_libraries(ac2ap_asi PRIVATE
+        ${OPENSSL_VCPKG}/lib/libssl.lib
+        ${OPENSSL_VCPKG}/lib/libcrypto.lib
+        crypt32)
 endif()

@@ -46,10 +46,25 @@ Header-only unless noted. Versions pinned by apclientpp:
 | `minhook` | github.com/TsudaKageyu/minhook | master |
 | `imgui` | github.com/ocornut/imgui | master (in-game overlay; uses the dx9 + win32 backends) |
 
+**TLS / OpenSSL (required)** — archipelago.gg rooms are WSS-only; without TLS the
+client can only reach plain `ws://` servers (e.g. localhost) and webhosted rooms
+fail with "End of file". OpenSSL x86 static comes from vcpkg, vendored too:
+
+```
+git clone --depth 1 https://github.com/microsoft/vcpkg deps/vcpkg
+deps/vcpkg/bootstrap-vcpkg.bat
+deps/vcpkg/vcpkg.exe install openssl:x86-windows-static
+```
+
+CMake links it statically (`libssl.lib` + `libcrypto.lib` + `crypt32`) and fails
+with a clear message if it's missing. Server certificates come from the Windows
+cert store (wincrypt), so nothing extra ships with the asi.
+
 Notes:
 - asio `master` breaks websocketpp (`io_service` was removed) — use the pinned commit.
 - zlib is required by websocketpp's `permessage_deflate` and is compiled in.
-- key defines: `ASIO_STANDALONE WSWRAP_NO_SSL AP_NO_SCHEMA _WEBSOCKETPP_CPP11_THREAD_`
+- key defines: `ASIO_STANDALONE AP_NO_SCHEMA _WEBSOCKETPP_CPP11_THREAD_` (do NOT
+  define `WSWRAP_NO_SSL` — that was the webhosted-room bug)
 - `project(AC2AP CXX C)`: C must be enabled to compile zlib's `.c` files
 
 ## Deploy (dist/)
