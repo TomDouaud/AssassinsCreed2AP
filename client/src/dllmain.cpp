@@ -374,7 +374,10 @@ DWORD WINAPI worker(LPVOID) {
     g_server = ini_get(ini, "server", "");
     g_slot = ini_get(ini, "slot", "");
     g_password = ini_get(ini, "password", "");
-    g_ap_enabled = !g_server.empty() && !g_slot.empty();
+    // Auto-connect only with real values: older shipped inis pre-filled placeholder
+    // server/slot, which made the client dial a non-existent room at launch and pop a
+    // cryptic "End of file" socket error before the player ever pressed F8.
+    g_ap_enabled = !g_server.empty() && !g_slot.empty() && g_slot != "YourSlotName";
     ac2ap::game::g_health_hook_enabled = ini_get(ini, "enable_health_hook", "0") == "1";
 
     logf("AC2AP v0 started. save=%s server=%s slot=%s ap=%d",
@@ -524,7 +527,14 @@ DWORD WINAPI worker(LPVOID) {
             ULONGLONG now = GetTickCount64();
             if (now - last > 6000) {
                 last = now;
-                ac2ap::overlay::toast("Can't reach server: " + msg, IM_COL32(240, 120, 120, 255), 5000);
+                // Translate the cryptic asio strings into something actionable.
+                std::string hint = msg;
+                if (msg.find("End of file") != std::string::npos)
+                    hint = "server closed the connection (wrong port, or room not running?)";
+                else if (msg.find("refused") != std::string::npos)
+                    hint = "connection refused (server down, or wrong host:port?)";
+                ac2ap::overlay::toast("Can't reach server: " + hint + " - F8 to edit",
+                                      IM_COL32(240, 120, 120, 255), 6000);
             }
         });
     };
