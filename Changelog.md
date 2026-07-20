@@ -1,11 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 — alpha
 
+- **Fixed: "Can't reach server: End of file" on archipelago.gg-hosted rooms.** The
+  client now speaks TLS (WSS) — webhosted rooms work; validated live. (The old build
+  could only reach plain `ws://` servers like localhost.)
+- Fixed: the shipped ini pre-filled a placeholder server/slot, so the client
+  auto-connected to a non-existent room at launch and popped that same cryptic
+  toast. The template now ships blank, the placeholder never auto-connects, and
+  socket errors explain themselves ("server closed the connection (wrong port, or
+  room not running?) — F8 to edit").
 - Reliable DeathLink emission: a hook on the game's SetHealth routine (found via
   hardware breakpoint + Ghidra decompilation) catches instant deaths (falls) that the
   health poll missed; combat deaths keep the invalidation detector. Guard kills don't
   false-positive; a received death is not echoed back (10 s suppression window).
+- New filler items with a real in-game effect: Smoke Bombs (+3), Medicine (+2),
+  Poison Vials (+2), Gun Ammo (+6) — granted straight into Ezio's pouches.
+- Docs: point `save_path` at the `1.save` FILE (not its folder), and play until the
+  first autosave before connecting (a fresh install has no save to find yet).
 
 ## 0.1.2 — alpha
 
