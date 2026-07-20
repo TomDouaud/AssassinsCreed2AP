@@ -34,6 +34,10 @@ constexpr int64_t FLORINS_100 = 20240012004;
 constexpr int64_t FLORINS_500 = 20240012005;
 constexpr int64_t FLORINS_1000 = 20240012006;
 constexpr int64_t PROGRESSIVE_TEMPLAR_GRIP = 20240012007;  // -25% notoriety floor each
+constexpr int64_t SMOKE_BOMBS = 20240012008;   // +consumable (RAM add)
+constexpr int64_t MEDICINE    = 20240012009;
+constexpr int64_t POISON_VIALS= 20240012010;
+constexpr int64_t GUN_AMMO    = 20240012011;
 // Traps (reserved in Items.py on the apworld side; provisional ids)
 constexpr int64_t TRAP_TEMPLAR_TAX = 20240012100;   // -25% florins
 constexpr int64_t TRAP_BAD_MEDICINE = 20240012101;  // health -> 1
@@ -200,6 +204,10 @@ bool apply_item(int64_t item) {
     case item_ids::FLORINS_100:  return ac2ap::game::add_money(100);
     case item_ids::FLORINS_500:  return ac2ap::game::add_money(500);
     case item_ids::FLORINS_1000: return ac2ap::game::add_money(1000);
+    case item_ids::SMOKE_BOMBS:  return ac2ap::game::add_consumable(ac2ap::game::consumable::SMOKE, 3);
+    case item_ids::MEDICINE:     return ac2ap::game::add_consumable(ac2ap::game::consumable::MEDICINE, 2);
+    case item_ids::POISON_VIALS: return ac2ap::game::add_consumable(ac2ap::game::consumable::POISON, 2);
+    case item_ids::GUN_AMMO:     return ac2ap::game::add_consumable(ac2ap::game::consumable::BULLETS, 6);
     case item_ids::TRAP_TEMPLAR_TAX:  return ac2ap::game::tax_money(25);
     case item_ids::TRAP_BAD_MEDICINE: return ac2ap::game::cripple_health();
     case item_ids::TRAP_DEATH:        return ac2ap::game::kill_player();

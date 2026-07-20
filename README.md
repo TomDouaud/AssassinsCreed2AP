@@ -76,8 +76,10 @@ the source tree.
    - Auto-detect uses **`1.save`** (slot 1). Play on that slot, or set `save_path`.
    - With **multiple Ubisoft profiles**, it picks the **first** profile folder that
      has a save — if that's the wrong account, set `save_path` in `AC2AP.ini`.
-   - Any other setup: set `save_path=` to your `1.save` path (no quotes; check
-     `AC2AP.log` if it can't find it).
+   - Any other setup: set `save_path=` to the **full path of the `1.save` file
+     itself** — not the folder containing it (no quotes; check `AC2AP.log` if it
+     can't find it). Example:
+     `save_path=C:\Program Files (x86)\Ubisoft\Ubisoft Game Launcher\savegames\1234567\4\1.save`
 4. Press **F8** (or **INSERT**) to open the connection menu, type your **server**
    (`host:port`), **slot** and **password**, then click **Connect**. A green
    "Connected" toast confirms it. (Ezio stays still while the menu is open; your

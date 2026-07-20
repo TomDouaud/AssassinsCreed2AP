@@ -28,10 +28,12 @@ The connection is done in-game (F8), so you don't edit the ini for that. The sav
 path **auto-detects Ubisoft Connect and Skidrow** installs (slot `1.save`) — a green
 **"Save found"** toast confirms it in-game.
 
-If it can't find your save (red toast, or check `AC2AP.log`), set `save_path=` to your
-`1.save` full path in `AC2AP.ini` (no quotes needed, spaces are fine). Note: with
-several Ubisoft profiles it uses the **first** one that has a save — set `save_path`
-if that's the wrong account.
+If it can't find your save (red toast, or check `AC2AP.log`), set `save_path=` in
+`AC2AP.ini` to the **full path of the `1.save` file itself** — not the folder that
+contains it (no quotes needed, spaces are fine), e.g.
+`save_path=C:\Program Files (x86)\Ubisoft\Ubisoft Game Launcher\savegames\1234567\4\1.save`.
+Note: with several Ubisoft profiles it uses the **first** one that has a save — set
+`save_path` if that's the wrong account.
 
 ## 3. Play
 1. Launch the game and load a save.

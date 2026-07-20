@@ -25,6 +25,13 @@ FLORINS_SMALL = "100 Florins"
 FLORINS_MEDIUM = "500 Florins"
 FLORINS_LARGE = "1000 Florins"
 
+# Consumable supplies: granted into Ezio's inventory on receipt (RAM add, validated).
+# Real in-game effect, filler classification (no logic depends on them).
+SMOKE_BOMBS = "Smoke Bombs"
+MEDICINE = "Medicine"
+POISON_VIALS = "Poison Vials"
+GUN_AMMO = "Gun Ammo"
+
 # Templar Grip: each one lowers the notoriety floor by 25% (templar_grip option).
 # Created only when the option is on; count = starting floor / 25 (see create_items).
 PROGRESSIVE_TEMPLAR_GRIP = "Progressive Templar Grip"
@@ -57,6 +64,10 @@ ITEM_TABLE: Dict[str, AC2ItemData] = {
     FLORINS_SMALL: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 4, ItemClassification.filler),
     FLORINS_MEDIUM: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 5, ItemClassification.filler),
     FLORINS_LARGE: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 6, ItemClassification.filler),
+    SMOKE_BOMBS:  AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 8, ItemClassification.filler),
+    MEDICINE:     AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 9, ItemClassification.filler),
+    POISON_VIALS: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 10, ItemClassification.filler),
+    GUN_AMMO:     AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 11, ItemClassification.filler),
     # useful, not progression: no access rule depends on it (soft difficulty relief only)
     PROGRESSIVE_TEMPLAR_GRIP: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 7, ItemClassification.useful, 4),
     # Traps: ids +100.. aligned with the client (item_ids::TRAP_* in dllmain.cpp)
@@ -94,4 +105,5 @@ ITEM_NAME_TO_ID: Dict[str, int] = {name: data.id for name, data in ITEM_TABLE.it
 # used to pad the pool up to the location count. See create_items in __init__.py.
 PROGRESSION_ITEMS = (PROGRESSIVE_SEQUENCE, CODEX_PAGE)
 USEFUL_ITEMS = (ASSASSIN_SEAL, PROGRESSIVE_HIDDEN_BLADE)
-FILLER_ITEMS = (FLORINS_SMALL, FLORINS_MEDIUM, FLORINS_LARGE)
+FILLER_ITEMS = (FLORINS_SMALL, FLORINS_MEDIUM, FLORINS_LARGE,
+                SMOKE_BOMBS, MEDICINE, POISON_VIALS, GUN_AMMO)
