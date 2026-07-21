@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 — alpha
+
+- Overlay layout: the F8 menu now has an **"Overlay layout"** section to pick which
+  screen corner the **toasts** and the **status line** anchor to (any of the four
+  corners). Applies live and is saved to the ini (`toast_corner` / `status_corner`).
+- Confirmed working on the **Steam** build of the game (in addition to Ubisoft
+  Connect and Skidrow) — no separate build needed.
+
 ## 0.1.3 — alpha
 
 - **Fixed: "Can't reach server: End of file" on archipelago.gg-hosted rooms.** The
