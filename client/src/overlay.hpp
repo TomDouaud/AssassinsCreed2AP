@@ -68,19 +68,41 @@ inline void toast(const std::string& text, ImU32 color = IM_COL32(255, 255, 255,
     g_toasts.push_back({text, GetTickCount64() + ms, color});
 }
 
-inline void render_toasts() {
+// --- overlay placement: which screen corner toasts / status line anchor to -------------------
+// 0=top-left 1=top-right 2=bottom-left 3=bottom-right. Set from the ini, changed live in the
+// menu (F8). g_layout_dirty tells the worker to persist the new choice back to the ini.
+inline int g_toast_corner = 1;    // default top-right (unchanged look)
+inline int g_status_corner = 2;   // default bottom-left (unchanged look)
+inline volatile bool g_layout_dirty = false;
+inline const char* const CORNER_NAMES[4] = {"Top-left", "Top-right", "Bottom-left", "Bottom-right"};
+inline void set_corners(int toast, int status) {
+    if (toast >= 0 && toast < 4) g_toast_corner = toast;
+    if (status >= 0 && status < 4) g_status_corner = status;
+}
+// corner -> anchor position + pivot (margin off the edges); dir = vertical stacking (+down/-up).
+inline void corner_anchor(int corner, float margin, ImVec2& pos, ImVec2& pivot, float& dir) {
     ImGuiIO& io = ImGui::GetIO();
+    bool right = (corner == 1 || corner == 3);
+    bool bottom = (corner == 2 || corner == 3);
+    pos = ImVec2(right ? io.DisplaySize.x - margin : margin, bottom ? io.DisplaySize.y - margin : margin);
+    pivot = ImVec2(right ? 1.0f : 0.0f, bottom ? 1.0f : 0.0f);
+    dir = bottom ? -1.0f : 1.0f;
+}
+
+inline void render_toasts() {
     ULONGLONG now = GetTickCount64();
     std::lock_guard<std::mutex> lk(g_toast_mtx);
     while (!g_toasts.empty() && g_toasts.front().expire <= now) g_toasts.pop_front();
     if (g_toasts.empty()) return;
 
-    float y = 12.0f;
+    ImVec2 pos, pivot; float dir;
+    corner_anchor(g_toast_corner, 12.0f, pos, pivot, dir);
+    float y = pos.y;
     int i = 0;
     for (const auto& t : g_toasts) {
         ULONGLONG left = t.expire > now ? t.expire - now : 0;
         float alpha = left < 600 ? (float)left / 600.0f : 1.0f;    // fade last 0.6s
-        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 12.0f, y), ImGuiCond_Always, ImVec2(1, 0));
+        ImGui::SetNextWindowPos(ImVec2(pos.x, y), ImGuiCond_Always, pivot);
         ImGui::SetNextWindowBgAlpha(0.72f * alpha);
         char id[32]; sprintf(id, "##ac2ap_toast_%d", i++);
         ImGui::Begin(id, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
@@ -90,7 +112,7 @@ inline void render_toasts() {
         ImGui::PushStyleColor(ImGuiCol_Text, c);
         ImGui::TextUnformatted(t.text.c_str());
         ImGui::PopStyleColor();
-        y += ImGui::GetWindowHeight() + 6.0f;
+        y += dir * (ImGui::GetWindowHeight() + 6.0f);   // stack toward the screen centre
         ImGui::End();
     }
 }
@@ -116,6 +138,12 @@ inline void render_menu() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Close", ImVec2(120, 0))) g_menu_open = false;
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader("Overlay layout")) {
+        int tc = g_toast_corner, sc = g_status_corner;
+        if (ImGui::Combo("Toasts corner", &tc, CORNER_NAMES, 4)) { g_toast_corner = tc; g_layout_dirty = true; }
+        if (ImGui::Combo("Status corner", &sc, CORNER_NAMES, 4)) { g_status_corner = sc; g_layout_dirty = true; }
+    }
     ImGui::TextDisabled("INSERT / F8: this menu   -   F9: status / breakdown");
     ImGui::End();
 }
@@ -144,8 +172,9 @@ inline void set_cats(int n, const char* const* names, const int* done, const int
 }
 
 inline void status_window_begin() {
-    ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(10.0f, io.DisplaySize.y - 10.0f), ImGuiCond_Always, ImVec2(0, 1));
+    ImVec2 pos, pivot; float dir;
+    corner_anchor(g_status_corner, 10.0f, pos, pivot, dir);
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
     ImGui::SetNextWindowBgAlpha(0.35f);
     ImGui::Begin("##ac2ap_status", nullptr, ImGuiWindowFlags_NoDecoration |
                  ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |

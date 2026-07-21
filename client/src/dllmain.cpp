@@ -389,6 +389,8 @@ DWORD WINAPI worker(LPVOID) {
     bool overlay_installed = false;
     int overlay_tries = 0;
     if (overlay_on) ac2ap::overlay::set_defaults(g_server, g_slot, g_password);  // prefill the menu
+    ac2ap::overlay::set_corners(atoi(ini_get(ini, "toast_corner", "1").c_str()),
+                                atoi(ini_get(ini, "status_corner", "2").c_str()));
     // Pre-fill the in-game connection form with the ini values.
     strncpy(ac2ap::overlay::g_conn.server, g_server.c_str(), sizeof(ac2ap::overlay::g_conn.server) - 1);
     strncpy(ac2ap::overlay::g_conn.slot, g_slot.c_str(), sizeof(ac2ap::overlay::g_conn.slot) - 1);
@@ -571,6 +573,14 @@ DWORD WINAPI worker(LPVOID) {
             WritePrivateProfileStringA("ac2ap", "password", g_password.c_str(), ini.c_str());
         }
         ac2ap::overlay::g_conn.connected = ap_authenticated;
+        if (ac2ap::overlay::g_layout_dirty) {   // menu changed the corners -> persist
+            ac2ap::overlay::g_layout_dirty = false;
+            char b[8];
+            _itoa(ac2ap::overlay::g_toast_corner, b, 10);
+            WritePrivateProfileStringA("ac2ap", "toast_corner", b, ini.c_str());
+            _itoa(ac2ap::overlay::g_status_corner, b, 10);
+            WritePrivateProfileStringA("ac2ap", "status_corner", b, ini.c_str());
+        }
         ac2ap::overlay::set_stats(stat_checks, stat_items);
         {   // push only the non-empty categories to the F9 breakdown
             const char* names[CAT_N]; int done[CAT_N], total[CAT_N]; int n = 0;
