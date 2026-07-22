@@ -73,10 +73,17 @@ the source tree.
    editing is needed for that. The save path **auto-detects Ubisoft Connect and
    Skidrow** installs — a green **"Save found"** toast confirms it (a red one means
    set `save_path` yourself). Notes:
+   - **⚠️ Turn OFF Ubisoft Connect cloud save sync** (Ubisoft Connect → menu →
+     Settings → General → uncheck "Enable cloud save synchronisation"). Whatever
+     your version, if it's on, Ubisoft overwrites the local save file with its
+     cloud copy at launch — which reverts your progress and hides your checks from
+     the client. This has bitten testers; disable it before playing.
    - **A save must exist first.** On a fresh install, play normally (without
      connecting) at least until the **first autosave** so the game creates the
      save file — otherwise there is nothing to find.
-   - Auto-detect uses **`1.save`** (slot 1). Play on that slot, or set `save_path`.
+   - Auto-detect uses **`1.save`** (slot 1). **Play on save slot 1** — if your game
+     is on slot 2 or 3, the client watches `1.save` and never sees your actions
+     (set `save_path` to `2.save`/`3.save`, or move your game to slot 1).
    - With **multiple Ubisoft profiles**, it picks the **first** profile folder that
      has a save — if that's the wrong account, set `save_path` in `AC2AP.ini`.
    - Any other setup: set `save_path=` to the **full path of the `1.save` file

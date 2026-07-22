@@ -9,6 +9,12 @@ you do NOT need to build anything.
 - **An existing save on slot 1.** If this is a fresh install, play the game normally
   (without AC2AP) at least until the **first autosave** — that creates the `1.save`
   file the client watches. No save file yet = a red "SAVE NOT FOUND" toast.
+  - Play on **save slot 1**: the client watches `1.save`. On slot 2/3 it never sees
+    your actions (set `save_path` to `2.save`/`3.save` instead, or use slot 1).
+- **⚠️ Ubisoft Connect: turn OFF cloud save sync** (Ubisoft Connect → menu →
+  Settings → General → uncheck "Enable cloud save synchronisation"), on ANY version.
+  If it's on, Ubisoft overwrites your local save with the cloud copy at launch — it
+  reverts your progress and the client stops seeing your checks. Disable it first.
 - An **ASI loader** so the game loads `.asi` mods — e.g.
   [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases):
   download `dinput8.dll` (or `winmm.dll`) and drop it next to the game `.exe`.
