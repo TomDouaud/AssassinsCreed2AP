@@ -526,6 +526,13 @@ DWORD WINAPI worker(LPVOID) {
         ap->set_socket_error_handler([&](const std::string& msg) {
             static ULONGLONG last = 0;   // debounce: the socket retries every second
             logf("AP: socket error: %s", msg.c_str());
+            // apclientpp tries wss:// first, then falls back to ws://. On a plain-ws server
+            // (localhost, or a non-TLS room) the wss attempt fails with a TLS/handshake error
+            // right before ws:// succeeds - that's normal, not a real failure, so don't alarm
+            // the player with a red toast for it (the connection completes a moment later).
+            if (msg.find("handshake") != std::string::npos || msg.find("TLS") != std::string::npos ||
+                msg.find("SSL") != std::string::npos || msg.find("sslv3") != std::string::npos)
+                return;
             ULONGLONG now = GetTickCount64();
             if (now - last > 6000) {
                 last = now;
@@ -929,8 +936,10 @@ DWORD WINAPI worker(LPVOID) {
 
         if (first_pass) {
             // baseline: existing state considered already processed (records AND counters)
-            logf("baseline: %zu (type,id), viewpoints=%d feathers=%d",
-                 counts.size(), cur_vp, cur_feather);
+            // size helps diagnose support cases: a real save is tens of KB; a near-empty
+            // one (a few KB, records ~1) means the wrong slot/file is being watched.
+            logf("baseline: %zu (type,id), viewpoints=%d feathers=%d, save size=%zu bytes",
+                 counts.size(), cur_vp, cur_feather, buf.size());
             for (const auto& k : fresh) seen.insert(k);
             // presence baseline: already-collected collectibles = already processed (no flood)
             for (const auto& [id, apid] : presence)

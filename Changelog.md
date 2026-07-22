@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5 — alpha
+
+- No more scary red "TLS handshake failed" toast when connecting to a plain-ws
+  server (localhost, or a non-TLS room): the client tries `wss://` then falls back
+  to `ws://`, and that first failed attempt is normal — it's now silent (logged only).
+- Startup log now records the save file size (`baseline: ... save size=N bytes`), so
+  a wrong-slot / near-empty save is obvious from the log.
+- Docs: turn OFF Ubisoft Connect cloud save sync (it overwrites the local save at
+  launch on any version), and play on save slot 1 (or point `save_path` at 2/3.save).
+
 ## 0.1.4 — alpha
 
 - Overlay layout: the F8 menu now has an **"Overlay layout"** section to pick which
