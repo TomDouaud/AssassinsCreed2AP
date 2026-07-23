@@ -5,6 +5,15 @@ This is an early alpha. Known limitations:
 - **Reserved-but-inactive options.** Viewpoints, glyphs, Assassin Tombs, secondary
   missions and villa renovations have option toggles, but enabling them currently
   has no effect (detection not yet reliable).
+- **Sequence 2 mission checks fire in the wrong order.** Two of the game records used
+  for Sequence 2 (`397E179C` / `397E179F`) are not emitted when their mission is
+  completed: one fires in the cascade at the *end of Sequence 1*, the other when you
+  *synchronise a viewpoint* near Paola's. So the first Sequence 2 checks are sent
+  early and under the wrong names; from "Laying Low" onward it behaves normally.
+  The records themselves are real (nothing is lost — every location still gets sent),
+  only the pairing of record → mission name is off for the first two. Root cause is
+  known (these ids look like sequence-transition "beats", flagged as unidentified in
+  our reverse-engineering notes) and needs a dedicated Sequence 2 capture to fix.
 - **Collectible latency.** Chests/feathers/statues/Codex are detected from the save,
   which the game writes on autosave — a check can take a short moment to register
   (missions are near-instant).
