@@ -786,6 +786,7 @@ DWORD WINAPI worker(LPVOID) {
             if (ap_authenticated && !pending.empty()) {
                 static size_t last_sent = 0;
                 static ULONGLONG last_send_at = 0;
+                static ULONGLONG retry_in = 10000;   // grows while nothing gets acked
                 std::set<int64_t> acked = ap->get_checked_locations();
                 size_t before = pending.size();
                 pending.erase(std::remove_if(pending.begin(), pending.end(),
@@ -794,17 +795,24 @@ DWORD WINAPI worker(LPVOID) {
                 if (pending.size() != before) {
                     save_pending(pending);
                     if (pending.size() < last_sent) last_sent = pending.size();
+                    retry_in = 10000;                // acks flowing again -> back to fast retry
                     logf("AP: %zu checks acked by server, %zu still pending",
                          before - pending.size(), pending.size());
                 }
                 ULONGLONG now = GetTickCount64();
-                // send immediately when new checks appear, then retry every 10 s until acked
-                if (!pending.empty() && (pending.size() > last_sent || now - last_send_at > 10000)) {
+                bool fresh = pending.size() > last_sent;      // new checks -> send at once
+                if (fresh) retry_in = 10000;
+                if (!pending.empty() && (fresh || now - last_send_at > retry_in)) {
                     last_send_at = now;
                     last_sent = pending.size();
                     std::list<int64_t> l(pending.begin(), pending.end());
                     ap->LocationChecks(l);
                     logf("AP: %zu LocationChecks sent (awaiting ack)", pending.size());
+                    // Back off to at most one retry per minute. The server only broadcasts
+                    // locations it did NOT already have, so a lost ack for a check it already
+                    // registered would otherwise retry forever; a reconnect settles it, since
+                    // the Connected packet carries the full checked list.
+                    if (!fresh && retry_in < 60000) retry_in *= 2;
                 }
             }
         }
