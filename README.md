@@ -81,9 +81,12 @@ the source tree.
    - **A save must exist first.** On a fresh install, play normally (without
      connecting) at least until the **first autosave** so the game creates the
      save file — otherwise there is nothing to find.
-   - Auto-detect uses **`1.save`** (slot 1). **Play on save slot 1** — if your game
-     is on slot 2 or 3, the client watches `1.save` and never sees your actions
-     (set `save_path` to `2.save`/`3.save`, or move your game to slot 1).
+   - **Check WHICH save file is yours** — it is not always `1.save` (auto-detect
+     assumes it). Watching the wrong file looks like everything works — it connects
+     and receives items — but **no check is ever sent**. Play until the first
+     autosave, then sort your save folder by *date modified*: the file that just
+     changed is yours, and it should weigh roughly **30–70 KB** (a few KB = empty
+     save, wrong file). If it isn't `1.save`, set `save_path` to its full path.
    - With **multiple Ubisoft profiles**, it picks the **first** profile folder that
      has a save — if that's the wrong account, set `save_path` in `AC2AP.ini`.
    - Any other setup: set `save_path=` to the **full path of the `1.save` file

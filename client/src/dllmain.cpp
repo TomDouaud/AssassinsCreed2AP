@@ -439,6 +439,10 @@ DWORD WINAPI worker(LPVOID) {
         ap_authenticated = false;
         std::string uuid = ap_get_uuid(g_dir + "\\AC2AP_uuid.txt");
         ap.reset(new APClient(uuid, "Assassin's Creed II", g_server));
+        // Locations are only marked checked once the SERVER acknowledges them (instead of
+        // apclientpp echoing them locally): that ack is what lets us retry checks the server
+        // never received - see the pending-resend loop below.
+        ap->set_receive_own_locations(true);
         logf("AP: connecting to %s slot '%s'", g_server.c_str(), g_slot.c_str());
         ac2ap::overlay::toast("Connecting to " + g_server + " ...", IM_COL32(230, 220, 130, 255), 3000);
         ap->set_room_info_handler([&]() {
@@ -773,12 +777,35 @@ DWORD WINAPI worker(LPVOID) {
 #ifdef AC2AP_WITH_AP
         if (ap) {
             ap->poll();
+            // Keep checks in `pending` until the SERVER acknowledges them, and retry otherwise.
+            // A websocket can die silently (a hosted room dropped by NAT/idle timeout - which a
+            // LAN server never shows): LocationChecks then vanishes with no error, and apclientpp
+            // only queues while it *knows* it is disconnected. Clearing `pending` right after the
+            // send therefore lost those checks until the next reconnect resync - players reported
+            // "checks only register when I reconnect".
             if (ap_authenticated && !pending.empty()) {
-                std::list<int64_t> l(pending.begin(), pending.end());
-                ap->LocationChecks(l);
-                logf("AP: %zu LocationChecks sent", pending.size());
-                pending.clear();
-                save_pending(pending);
+                static size_t last_sent = 0;
+                static ULONGLONG last_send_at = 0;
+                std::set<int64_t> acked = ap->get_checked_locations();
+                size_t before = pending.size();
+                pending.erase(std::remove_if(pending.begin(), pending.end(),
+                                             [&](int64_t id) { return acked.count(id) != 0; }),
+                              pending.end());
+                if (pending.size() != before) {
+                    save_pending(pending);
+                    if (pending.size() < last_sent) last_sent = pending.size();
+                    logf("AP: %zu checks acked by server, %zu still pending",
+                         before - pending.size(), pending.size());
+                }
+                ULONGLONG now = GetTickCount64();
+                // send immediately when new checks appear, then retry every 10 s until acked
+                if (!pending.empty() && (pending.size() > last_sent || now - last_send_at > 10000)) {
+                    last_send_at = now;
+                    last_sent = pending.size();
+                    std::list<int64_t> l(pending.begin(), pending.end());
+                    ap->LocationChecks(l);
+                    logf("AP: %zu LocationChecks sent (awaiting ack)", pending.size());
+                }
             }
         }
 #endif
