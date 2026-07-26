@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.6 — alpha
+
+- **Fixed: checks only registering after reconnecting.** A websocket can die
+  silently (NAT / idle timeout on a hosted room — a LAN server never shows it):
+  the send succeeds locally, the server never receives it, and no error is raised.
+  Checks now stay queued until the **server acknowledges** them and are retried
+  every 10 s, so they can no longer be lost between reconnects. This also explains
+  shop purchases (e.g. the medium/large medicine pouches) appearing to do nothing.
+- Docs: how to identify **which save file is actually yours** — it is not always
+  `1.save`. Watching the wrong file connects and receives items but never sends a
+  single check.
+
 ## 0.1.5 — alpha
 
 - No more scary red "TLS handshake failed" toast when connecting to a plain-ws
