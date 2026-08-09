@@ -94,29 +94,41 @@ bool read_file(const std::string& path, std::vector<uint8_t>& out) {
     return ok && got == size;
 }
 
-// Finds a slot-1 save inside a Ubisoft "<account>\4" folder. The exact name varies between
-// installs (1.save vs save1), so try the common names then glob for any save file (skip the
-// 999 profile). Returns "" if none.
+// Finds the save the game is actually writing, inside a "<account>\4" folder.
+// The FILE NAME is not a reliable clue: players are frequently on save slot 2 or 3, and some
+// installs name them "save1" instead of "1.save". Picking "1.save" by name was the single most
+// common support case - the client connects and receives items but never sends a check, because
+// it watches a slot the player does not play on. So we take the MOST RECENTLY MODIFIED save
+// file: that is the one the game just wrote. The 999 file is options/profile, never a save.
 std::string find_save_file(const std::string& dir4) {
-    const char* names[] = {"1.save", "save1", "2.save", "save2", "3.save", "save3"};
-    for (auto n : names) {
-        std::string c = dir4 + "\\" + n;
-        if (GetFileAttributesA(c.c_str()) != INVALID_FILE_ATTRIBUTES) return c;
-    }
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA((dir4 + "\\*").c_str(), &fd);
-    if (h != INVALID_HANDLE_VALUE) {
-        do {
-            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-            std::string nm = fd.cFileName;
-            if (nm.find("999") != std::string::npos) continue;   // 999 = profile/options
-            bool save = (nm.size() >= 5 && nm.compare(nm.size() - 5, 5, ".save") == 0)
-                        || nm.compare(0, 4, "save") == 0;
-            if (save) { std::string c = dir4 + "\\" + nm; FindClose(h); return c; }
-        } while (FindNextFileA(h, &fd));
-        FindClose(h);
-    }
-    return "";
+    if (h == INVALID_HANDLE_VALUE) return "";
+    std::string best;
+    FILETIME best_time{};
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        std::string nm = fd.cFileName;
+        if (nm.find("999") != std::string::npos) continue;   // 999 = profile/options
+        bool save = (nm.size() >= 5 && nm.compare(nm.size() - 5, 5, ".save") == 0)
+                    || nm.compare(0, 4, "save") == 0;
+        if (!save) continue;
+        if (best.empty() || CompareFileTime(&fd.ftLastWriteTime, &best_time) > 0) {
+            best_time = fd.ftLastWriteTime;
+            best = dir4 + "\\" + nm;
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return best;
+}
+
+// A real AC2 save is tens of KB; a freshly created/empty slot is only a couple of KB and holds
+// no records, so watching it silently reports nothing. Used to warn instead of failing quietly.
+constexpr DWORD SAVE_MIN_PLAUSIBLE = 15000;
+DWORD save_file_size(const std::string& path) {
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &fad)) return 0;
+    return fad.nFileSizeLow;
 }
 
 // Auto-detect the Ubisoft Connect save. The launcher stores saves under:
@@ -357,20 +369,33 @@ DWORD WINAPI worker(LPVOID) {
     g_save_path = ini_get(ini, "save_path", "");
     if (!g_save_path.empty()) save_from_ini = true;
     if (g_save_path.empty()) g_save_path = find_ubisoft_save();
-    if (g_save_path.empty()) {
+    if (g_save_path.empty()) {   // Skidrow layout: same "pick the newest save" rule
         const char* local = std::getenv("LOCALAPPDATA");
-        g_save_path = std::string(local ? local : "") + "\\storage\\SKIDROW\\4\\1.save";
+        std::string dir4 = std::string(local ? local : "") + "\\storage\\SKIDROW\\4";
+        g_save_path = find_save_file(dir4);
+        if (g_save_path.empty()) g_save_path = dir4 + "\\1.save";   // for the "not found" message
     }
     // Save-found feedback: the file must exist for detection to work. Toast it (queued until the
     // overlay is up) so the player knows immediately whether their save was located.
     bool save_found = GetFileAttributesA(g_save_path.c_str()) != INVALID_FILE_ATTRIBUTES;
-    logf("save path: %s  [%s, %s]", g_save_path.c_str(),
-         save_from_ini ? "from ini" : "auto-detected", save_found ? "FOUND" : "NOT FOUND");
-    if (save_found)
-        ac2ap::overlay::toast("Save found", IM_COL32(140, 230, 140, 255), 5000);
-    else
+    DWORD save_size = save_found ? save_file_size(g_save_path) : 0;
+    logf("save path: %s  [%s, %s, %lu bytes]", g_save_path.c_str(),
+         save_from_ini ? "from ini" : "auto-detected", save_found ? "FOUND" : "NOT FOUND", save_size);
+    if (!save_found)
         ac2ap::overlay::toast("SAVE NOT FOUND - set save_path in AC2AP.ini",
                               IM_COL32(240, 120, 120, 255), 12000);
+    else if (save_size < SAVE_MIN_PLAUSIBLE) {
+        // Found, but far too small to be a played game: almost certainly an empty slot, so no
+        // check would ever be sent. Say so loudly rather than looking like everything is fine.
+        logf("WARNING: save is only %lu bytes - looks EMPTY (a played save is tens of KB). "
+             "Wrong slot? Set save_path to the save you actually play on.", save_size);
+        ac2ap::overlay::toast("Save looks EMPTY (" + std::to_string(save_size / 1024) +
+                              " KB) - wrong slot? checks may never send",
+                              IM_COL32(240, 180, 100, 255), 12000);
+    } else {
+        ac2ap::overlay::toast("Save found (" + std::to_string(save_size / 1024) + " KB)",
+                              IM_COL32(140, 230, 140, 255), 5000);
+    }
     g_server = ini_get(ini, "server", "");
     g_slot = ini_get(ini, "slot", "");
     g_password = ini_get(ini, "password", "");

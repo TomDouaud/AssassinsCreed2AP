@@ -81,18 +81,34 @@ the source tree.
    - **A save must exist first.** On a fresh install, play normally (without
      connecting) at least until the **first autosave** so the game creates the
      save file — otherwise there is nothing to find.
-   - **Check WHICH save file is yours** — it is not always `1.save` (auto-detect
-     assumes it). Watching the wrong file looks like everything works — it connects
-     and receives items — but **no check is ever sent**. Play until the first
-     autosave, then sort your save folder by *date modified*: the file that just
-     changed is yours, and it should weigh roughly **30–70 KB** (a few KB = empty
-     save, wrong file). If it isn't `1.save`, set `save_path` to its full path.
+   - **Which save file gets watched.** It is very often *not* `1.save` — plenty of
+     players are on slot 2 or 3. The client therefore picks the **most recently
+     modified** save in your save folder, which is the one the game just wrote.
+     Play until the first autosave before connecting so that file exists.
+   - The startup toast tells you which one it took and its size. A played save
+     weighs roughly **30–70 KB**; if you get a **"Save looks EMPTY"** warning, the
+     client found an unused slot — no check would ever be sent. Set `save_path` to
+     the save you actually play on. (This is the most common support case: watching
+     the wrong file looks like everything works — it connects and receives items —
+     but nothing is ever sent.)
    - With **multiple Ubisoft profiles**, it picks the **first** profile folder that
      has a save — if that's the wrong account, set `save_path` in `AC2AP.ini`.
-   - Any other setup: set `save_path=` to the **full path of the `1.save` file
-     itself** — not the folder containing it (no quotes; check `AC2AP.log` if it
-     can't find it). Example:
-     `save_path=C:\Program Files (x86)\Ubisoft\Ubisoft Game Launcher\savegames\1234567\4\1.save`
+   - Any other setup: set `save_path=` to the **full path of the save file itself**
+     — not the folder containing it (no quotes; check `AC2AP.log` if it can't find
+     it). Example:
+     `save_path=C:\Program Files (x86)\Ubisoft\Ubisoft Game Launcher\savegames\1234567\4\2.save`
+
+### Using other mods alongside AC2AP
+
+AC2AP is a normal ASI plugin, so it coexists with other AC2 ASI mods — one ASI
+loader loads every `.asi` it finds. Put them side by side in the same `scripts\`
+folder; you do **not** need a second loader.
+
+Tested together: **[EaglePatch AC2](https://github.com/Sergeanur/EaglePatch)**
+(`EaglePatchAC2.asi` + `.ini` in `scripts\`, next to `AC2AP.asi`). Mods that are
+Cheat Engine tables rather than `.asi` plugins — such as the Definitive AC2 Parkour
+Mod — run through Cheat Engine and are unaffected by AC2AP either way; players have
+run them together successfully.
 4. Press **F8** (or **INSERT**) to open the connection menu, type your **server**
    (`host:port`), **slot** and **password**, then click **Connect**. A green
    "Connected" toast confirms it. (Ezio stays still while the menu is open; your

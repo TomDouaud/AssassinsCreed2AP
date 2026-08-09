@@ -6,16 +6,14 @@ you do NOT need to build anything.
 
 ## What you need
 - **Assassin's Creed II** for PC (build 1.01, 32-bit `AssassinsCreedIIGame.exe`).
-- **An existing save, and you must know WHICH file it is.** The save is not always
-  `1.save` — the game may well be writing `2.save` or higher. If the client watches
-  the wrong file it connects fine and receives items, but **never sends a single
-  check**. Do this once, before playing:
-  1. Start a new game (or load yours) and play until the **first autosave**.
-  2. Open your save folder (`...\Ubisoft Game Launcher\savegames\<id>\4\`, or
-     `%LOCALAPPDATA%\storage\SKIDROW\4\`) and sort by **date modified**.
-  3. The file just modified is yours. It should weigh roughly **30–70 KB** — if it
-     is only a few KB, it's an empty save, so it's the wrong one; keep looking.
-  4. If it isn't `1.save`, put its full path in `save_path=` in `AC2AP.ini`.
+- **An existing save.** Play until the **first autosave** before connecting, so the
+  game has actually written one. The client then watches the **most recently
+  modified** save in your save folder — not necessarily `1.save`, since plenty of
+  players are on slot 2 or 3.
+  - The startup toast says which file it took and its size. A played save is about
+    **30–70 KB**. If you see **"Save looks EMPTY"**, it picked an unused slot and
+    **no check will ever be sent** — set `save_path` in `AC2AP.ini` to the save you
+    actually play on (full path of the file, not the folder).
 - **⚠️ Ubisoft Connect: turn OFF cloud save sync** (Ubisoft Connect → menu →
   Settings → General → uncheck "Enable cloud save synchronisation"), on ANY version.
   If it's on, Ubisoft overwrites your local save with the cloud copy at launch — it
