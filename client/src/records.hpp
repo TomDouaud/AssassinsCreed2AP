@@ -25,21 +25,25 @@ using RecordCounts = std::map<RecordKey, int>;
 // "memory completed" record type (also used for the per-district collectible trackers).
 constexpr uint64_t REC_MISSION_TYPE = 0x5FDACBA05FDACBA0ull;
 
-// A record of that type is written as soon as the memory STARTS / becomes available, carrying a
-// completion percentage of 0, and only flips to 100 once it is really finished. Reporting it the
-// moment the id appears therefore fired the check at mission START, one memory ahead of the
-// player (issue #4: "the check for Ace Up My Sleeve was sent right after Sequence 1").
+// A record of that type is written as soon as the memory STARTS / becomes available, with its
+// completion flag still clear, and the flag is only set once the memory is really finished.
+// Reporting the record the moment its id appears therefore fired the check at mission START,
+// one memory ahead of the player (issue #4: "the check for Ace Up My Sleeve was sent right
+// after Sequence 1 was completed").
+// The flag is a u32 storing 0 or 100 - it is a boolean, not a percentage: AC2 has no partial
+// synchronisation, and across the 27 lab saves the field only ever holds those two values
+// (272 records at 0, 2242 at 100, nothing in between).
 // Verified across the per-chapter saves - the same id goes 0 -> 100:
 //   Friend of the Family 0 (Seq1 M8) -> 100 (Seq2 M1); Fitting In 0 (Seq2 M1) -> 100 (Seq2 M4);
 //   Arrivederci 0 (Seq2 M4) -> 100 (Seq3 M3). The per-district collectible trackers behave the
-//   same way: they only reach 100 once that district is fully looted.
-// Layout: nested record marker 0x0B at +0x2D, completion percentage as u32 at +0x2E.
+//   same way: their flag is only set once that district is fully looted.
+// Layout: nested record marker 0x0B at +0x2D, completion flag as u32 at +0x2E.
 inline bool record_completed(const uint8_t* rec, size_t avail) {
     if (avail < 0x32) return true;        // too short to tell -> keep it, never drop a check
     if (rec[0x2D] != 0x0B) return true;   // unexpected layout -> keep it
-    uint32_t pct;
-    std::memcpy(&pct, rec + 0x2E, 4);
-    return pct >= 100;
+    uint32_t done;
+    std::memcpy(&done, rec + 0x2E, 4);
+    return done != 0;
 }
 
 inline RecordCounts parse_records(const uint8_t* buf, size_t len) {
