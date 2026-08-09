@@ -38,6 +38,10 @@ constexpr int64_t SMOKE_BOMBS = 20240012008;   // +consumable (RAM add)
 constexpr int64_t MEDICINE    = 20240012009;
 constexpr int64_t POISON_VIALS= 20240012010;
 constexpr int64_t GUN_AMMO    = 20240012011;
+// Shop equipment (weapons/armor/dyes/paintings/pouches) starts here - Items.py SHOP_ITEM_BASE.
+// These circulate in the multiworld but are NOT materialized in Ezio's inventory yet: a weapon is
+// an entity instance built by the engine (pool + handle + vtable), not a value we can write.
+constexpr int64_t SHOP_ITEM_BASE = 20240012200;
 // Traps (reserved in Items.py on the apworld side; provisional ids)
 constexpr int64_t TRAP_TEMPLAR_TAX = 20240012100;   // -25% florins
 constexpr int64_t TRAP_BAD_MEDICINE = 20240012101;  // health -> 1
@@ -530,6 +534,11 @@ DWORD WINAPI worker(LPVOID) {
                     std::string msg = std::string(tag) + "Received: " + name;
                     if (!from.empty() && it.player != ap->get_player_number())
                         msg += "  (from " + from + ")";
+                    // Say it outright rather than letting players hunt for gear that never shows
+                    // up in their inventory (recurring question: "I received armor but only have
+                    // what I bought - do I need to finish the sequence?"). See knownIssues.
+                    if (it.item >= item_ids::SHOP_ITEM_BASE)
+                        msg += "  [not granted in-game yet]";
                     ac2ap::overlay::toast(msg, col, 7000);
                 }
             }

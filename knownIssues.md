@@ -20,8 +20,18 @@ This is an early alpha. Known limitations:
 - **Progression items have no in-game effect yet.** Progressive Sequence / Codex /
   Seal / Hidden Blade gate the seed logically on the Archipelago side, but are not
   enforced inside the game (open world stays reachable).
-- **Weapon/equipment grant.** Equipment items circulate in the multiworld but are
-  not yet materialized into Ezio's inventory in-game.
+- **Weapon/equipment grant.** Shop equipment (weapons, armor, dyes, paintings,
+  pouches) circulates in the multiworld — you can send and receive it, and it counts
+  for the seed — but receiving a piece does **not** put it in Ezio's inventory yet.
+  You will only carry what you actually bought in-game. This is not tied to story
+  progress: finishing a sequence changes nothing. Received-item toasts say
+  "[not granted in-game yet]" so it's unambiguous.
+  Why: a weapon is not a value we can write, it is an entity the engine builds
+  (object pool + handle + vtable). Both routes were explored and hit that wall —
+  live RAM (hardware breakpoint on the inventory during an equip, which lands in the
+  generic pool allocator) and save editing (the save carries the item in two separate
+  lists plus per-instance handles). Florins, consumables and traps *are* applied
+  in-game, because those are plain values.
 - **Templar Grip is UNSTABLE / experimental (off by default).** It clamps the
   notoriety *meter* to a floor that Progressive Templar Grip items lower (75% → 50%
   → 25% → 0%). What it does NOT do: force the renegade *state*. In AC2 that state is
