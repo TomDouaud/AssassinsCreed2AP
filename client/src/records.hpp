@@ -22,6 +22,26 @@ struct RecordKey {
 // Multiset (type,id) -> occurrences, like the python Counter.
 using RecordCounts = std::map<RecordKey, int>;
 
+// "memory completed" record type (also used for the per-district collectible trackers).
+constexpr uint64_t REC_MISSION_TYPE = 0x5FDACBA05FDACBA0ull;
+
+// A record of that type is written as soon as the memory STARTS / becomes available, carrying a
+// completion percentage of 0, and only flips to 100 once it is really finished. Reporting it the
+// moment the id appears therefore fired the check at mission START, one memory ahead of the
+// player (issue #4: "the check for Ace Up My Sleeve was sent right after Sequence 1").
+// Verified across the per-chapter saves - the same id goes 0 -> 100:
+//   Friend of the Family 0 (Seq1 M8) -> 100 (Seq2 M1); Fitting In 0 (Seq2 M1) -> 100 (Seq2 M4);
+//   Arrivederci 0 (Seq2 M4) -> 100 (Seq3 M3). The per-district collectible trackers behave the
+//   same way: they only reach 100 once that district is fully looted.
+// Layout: nested record marker 0x0B at +0x2D, completion percentage as u32 at +0x2E.
+inline bool record_completed(const uint8_t* rec, size_t avail) {
+    if (avail < 0x32) return true;        // too short to tell -> keep it, never drop a check
+    if (rec[0x2D] != 0x0B) return true;   // unexpected layout -> keep it
+    uint32_t pct;
+    std::memcpy(&pct, rec + 0x2E, 4);
+    return pct >= 100;
+}
+
 inline RecordCounts parse_records(const uint8_t* buf, size_t len) {
     RecordCounts out;
     if (len < 20) return out;
@@ -37,6 +57,9 @@ inline RecordCounts parse_records(const uint8_t* buf, size_t len) {
         k.id = 0;
         if (i + 0x1D <= len && buf[i + 0x18] == 0x0B)
             std::memcpy(&k.id, buf + i + 0x19, 4);
+        // Only completion is a check. Restricted to the mission type: that is the layout we
+        // verified, and other record types (loot, item acquired) mean "done" on sight.
+        if (k.type == REC_MISSION_TYPE && !record_completed(buf + i, len - i)) continue;
         out[k]++;
     }
     return out;
