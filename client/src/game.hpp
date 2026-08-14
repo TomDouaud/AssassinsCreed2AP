@@ -752,11 +752,28 @@ inline bool cripple_health() { return set_health(1); }
 //   obj    = slot[0], valid only while (int)slot[2] < 0   - the engine's handle resolve
 //   solved = (*(u8*)(obj + 0x44) >> 1) & 1
 // Strictly READ-ONLY: we read what the pause menu already reads, so this cannot break anything.
-constexpr uintptr_t GLYPH_MGR_PTR = 0x022553B0;
-
+// The manager pointer is NOT hardcoded: a fixed RVA only matches the build it was mapped on (the
+// Steam/Ubisoft executable differs from the Skidrow one and silently misses every fixed address).
+// Instead we locate the very instruction that loads it, which is unique in the executable:
+//     8A 49 61        mov  cl,[ecx+61]      <- glyph index from the Animus DB entry
+//     80 E1 1F        and  cl,1F
+//     76 xx           jbe  short
+//     A1 <abs32>      mov  eax,[manager]    <- the address we want, already relocated by the loader
+//     0F B7 50 2E     movzx edx,[eax+2E]    <- the count read
 inline uintptr_t glyph_mgr() {
+    static uintptr_t s_ptr_addr = 0;
+    if (!s_ptr_addr) {
+        static const uint8_t AOB[] = {0x8A, 0x49, 0x61, 0x80, 0xE1, 0x1F};
+        uintptr_t m = find_aob(AOB, sizeof(AOB));
+        if (!m) return 0;
+        uint8_t op = 0;
+        if (!safe_read(m + 8, &op, 1) || op != 0xA1) return 0;   // expect mov eax,[abs32]
+        uint32_t a = 0;
+        if (!safe_read(m + 9, &a, 4) || a < 0x10000) return 0;
+        s_ptr_addr = a;
+    }
     uint32_t mgr = 0;
-    if (!rd32(GLYPH_MGR_PTR, mgr) || mgr < 0x10000) return 0;
+    if (!rd32(s_ptr_addr, mgr) || mgr < 0x10000) return 0;
     return mgr;
 }
 

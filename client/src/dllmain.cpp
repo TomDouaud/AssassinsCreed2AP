@@ -687,6 +687,7 @@ DWORD WINAPI worker(LPVOID) {
                 else if (op == "money") done = ac2ap::game::add_money((int)arg);
                 else if (op == "kill") done = ac2ap::game::kill_player();
                 else if (op == "glyphs") {     // read-only: dump glyph puzzle solved state
+                    logf("GLYPHS mgr=%08X", (unsigned)ac2ap::game::glyph_mgr());
                     int n = ac2ap::game::glyph_count();
                     char buf[64 * 8]; int p = 0; buf[0] = 0;
                     for (int i = 0; i < n && p < (int)sizeof(buf) - 8; i++)
@@ -1154,9 +1155,24 @@ DWORD WINAPI worker(LPVOID) {
 
 } // namespace
 
+// The ASI loader also runs inside the launcher and the Uplay helper processes that live next to
+// the game (UbisoftGameLauncher, UplayWebCore, ...), and each of those would spin up a full second
+// client: measured 17 startups in a single launch, all fighting over the same state files, the
+// same command file and the same server connection - which is also why debug reads came back as
+// zeroes, since whichever process grabbed the command first had no game memory in it.
+// Only the game process should run the client.
+inline bool host_is_game() {
+    char path[MAX_PATH] = {0};
+    if (!GetModuleFileNameA(nullptr, path, MAX_PATH)) return false;
+    const char* exe = strrchr(path, '\\');
+    exe = exe ? exe + 1 : path;
+    return _stricmp(exe, "AssassinsCreedIIGame.exe") == 0;
+}
+
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(inst);
+        if (!host_is_game()) return TRUE;   // loaded into a launcher/helper: stay out of the way
         g_dir = module_dir(inst);
         g_log = fopen((g_dir + "\\AC2AP.log").c_str(), "a");
         HANDLE t = CreateThread(nullptr, 0, worker, nullptr, 0, nullptr);
