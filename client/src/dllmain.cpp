@@ -686,6 +686,14 @@ DWORD WINAPI worker(LPVOID) {
                 else if (op == "tax") done = ac2ap::game::tax_money((int)arg);
                 else if (op == "money") done = ac2ap::game::add_money((int)arg);
                 else if (op == "kill") done = ac2ap::game::kill_player();
+                else if (op == "glyphs") {     // read-only: dump glyph puzzle solved state
+                    int n = ac2ap::game::glyph_count();
+                    char buf[64 * 8]; int p = 0; buf[0] = 0;
+                    for (int i = 0; i < n && p < (int)sizeof(buf) - 8; i++)
+                        p += sprintf(buf + p, "%d", ac2ap::game::glyph_solved(i) ? 1 : 0);
+                    logf("GLYPHS count=%d solved=[%s]", n, buf);
+                    done = n > 0;
+                }
                 else if (op == "skipcine") {   // roadmap B: skip the current cinematic
                     done = ac2ap::game::skip_cinematic();
                     logf("SKIPCINE -> %s", done ? "dispatched" : "failed (not in a cinematic, or wrong build)");

@@ -742,6 +742,54 @@ inline bool is_desynced() {
 // Sets health to 1 (Bad Medicine trap). false if out-of-game.
 inline bool cripple_health() { return set_health(1); }
 
+// --- Glyph puzzles (Animus Database) -------------------------------------------------------
+// Glyphs leave NO record in the save (checked in the lab), which is why detection was parked.
+// But the Animus Database UI can answer "is this minigame solved", and decompiling that bridge
+// (the handler for GET_ANIMUS_DB_IS_MINIGAME_SOLVED) shows exactly where it looks:
+//   mgr    = *(u32*)0x022553B0                        - glyph-puzzle manager
+//   count  = *(u16*)(mgr + 0x2E) & 0x3FFF
+//   slot   = *(u32**)(*(u32*)(mgr + 0x28) + i*4)      - array of handle slots
+//   obj    = slot[0], valid only while (int)slot[2] < 0   - the engine's handle resolve
+//   solved = (*(u8*)(obj + 0x44) >> 1) & 1
+// Strictly READ-ONLY: we read what the pause menu already reads, so this cannot break anything.
+constexpr uintptr_t GLYPH_MGR_PTR = 0x022553B0;
+
+inline uintptr_t glyph_mgr() {
+    uint32_t mgr = 0;
+    if (!rd32(GLYPH_MGR_PTR, mgr) || mgr < 0x10000) return 0;
+    return mgr;
+}
+
+// Number of glyph puzzles the engine knows about (0 if unavailable, e.g. out of game).
+inline int glyph_count() {
+    uintptr_t mgr = glyph_mgr();
+    if (!mgr) return 0;
+    uint16_t n = 0;
+    if (!safe_read(mgr + 0x2E, &n, 2)) return 0;
+    n &= 0x3FFF;
+    return n > 256 ? 0 : n;            // sanity: AC2 has 20
+}
+
+// Resolves puzzle i, 0 if the slot is empty/stale. See the handle-resolve note above.
+inline uintptr_t glyph_obj(int i) {
+    uintptr_t mgr = glyph_mgr();
+    if (!mgr || i < 0) return 0;
+    uint32_t arr = 0, slot = 0;
+    if (!rd32(mgr + 0x28, arr) || arr < 0x10000) return 0;
+    if (!rd32(arr + (uint32_t)i * 4, slot) || slot < 0x10000) return 0;
+    uint32_t obj = 0, gen = 0;
+    if (!rd32(slot, obj) || !rd32(slot + 8, gen)) return 0;
+    if ((int32_t)gen >= 0) return 0;   // slot not live
+    return obj < 0x10000 ? 0 : obj;
+}
+
+inline bool glyph_solved(int i) {
+    uintptr_t o = glyph_obj(i);
+    if (!o) return false;
+    uint8_t b = 0;
+    return safe_read(o + 0x44, &b, 1) && ((b >> 1) & 1) != 0;
+}
+
 // --- Skip the current cinematic ------------------------------------------------------------
 // The engine routes named UI actions ("Quit", "ReloadLastCheckpoint", "RestartMemory",
 // "AbortMemory", "SkipCinematic", "ExitReplayMode") through one handler; the SkipCinematic
