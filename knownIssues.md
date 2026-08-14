@@ -2,7 +2,10 @@
 
 This is an early alpha. Known limitations:
 
-- **Reserved-but-inactive options.** Viewpoints, glyphs, Assassin Tombs, secondary
+- **Glyphs now work** (20 locations, `glyphs` option). They are the one collectible the
+  game never writes to the save, so the client reads their solved state live from the
+  Animus Database: the game must be running for a solved glyph to register.
+- **Reserved-but-inactive options.** Viewpoints, Assassin Tombs, secondary
   missions and villa renovations have option toggles, but enabling them currently
   has no effect (detection not yet reliable).
 - **Sequence 2 mission checks fire in the wrong order.** Two of the game records used

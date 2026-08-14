@@ -42,9 +42,12 @@ class Feathers(Toggle):
 
 
 class Glyphs(Toggle):
-    """Include solving glyph puzzles as locations.
+    """Include solving glyph puzzles as locations (20 of them).
 
-    Not yet implemented in this MVP: enabling this has no effect.
+    Solving a glyph sends its check. Glyphs are the one collectible the game never
+    writes to the save file, so the client reads their solved state live from the
+    Animus Database instead - which means the game must be running for them to
+    register (they cannot be picked up from the save afterwards).
     """
     display_name = "Glyphs"
     default = 0

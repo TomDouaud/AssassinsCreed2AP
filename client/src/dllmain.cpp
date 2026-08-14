@@ -273,6 +273,9 @@ uint32_t load_goal_id() {
 // we detect by simple PRESENCE of the ID in the save buffer. Robust, no list parsing.
 // Dedup via the usual seen set with a sentinel type.
 constexpr uint64_t REC_PRESENCE = 0x50524553454E4345ull;  // "PRESENCE"
+// Glyph puzzles are never written to the save, so they are polled from RAM instead; this
+// sentinel type lets them share the same `seen` dedup set as everything else (id = glyph index).
+constexpr uint64_t REC_GLYPH = 0x474C595048505A4Cull;     // "GLYPHPZL"
 
 inline bool buf_has_u32(const std::vector<uint8_t>& buf, uint32_t id) {
     if (buf.size() < 4) return false;
@@ -975,6 +978,33 @@ DWORD WINAPI worker(LPVOID) {
             applied_index = idx;
             save_applied_index(applied_index);
             item_queue.erase(item_queue.begin());
+        }
+
+        // 1c) glyph puzzles: RAM-only (they leave no trace in the save), so poll them here
+        //     rather than in the save-change path. Solved state comes from the same place the
+        //     Animus Database reads it; dedup goes through `seen` like every other check.
+        {
+            auto git = counted.find("GLYPH");
+            if (git != counted.end()) {
+                int gn = ac2ap::game::glyph_count();
+                if (gn > (int)git->second.size()) gn = (int)git->second.size();
+                for (int i = 0; i < gn; i++) {
+                    int64_t loc = git->second[i];
+                    if (!loc) continue;
+                    ac2ap::RecordKey gk{REC_GLYPH, (uint32_t)i};
+                    if (seen.count(gk) || !ac2ap::game::glyph_solved(i)) continue;
+                    seen.insert(gk);
+                    save_seen(seen);
+                    pending.push_back(loc);
+                    { int c = cat_of(loc); if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; } }
+                    logf("CHECK GLYPH #%d -> location AP %lld", i + 1, (long long)loc);
+#ifdef AC2AP_WITH_AP
+                    if (ap && ap_authenticated)
+                        ac2ap::overlay::toast("Checked: " + ap->get_location_name(loc, ap->get_game()),
+                                              IM_COL32(210, 210, 210, 255), 4000);
+#endif
+                }
+            }
         }
 
         // 2) has the save changed?
