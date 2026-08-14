@@ -141,6 +141,17 @@ DWORD save_file_size(const std::string& path) {
 // The <accountId> folder is per account, so we enumerate it. Returns "" if none is found.
 std::string find_ubisoft_save() {
     std::vector<std::string> bases;
+    // The Uplay wrapper often keeps saves INSIDE the game folder (<game>\savegames\<uid>\4\),
+    // not under Program Files - seen live on a Steam copy whose saves landed there while the
+    // client was still watching a months-old file elsewhere and therefore never sent a check.
+    {
+        char exe[MAX_PATH] = {0};
+        if (GetModuleFileNameA(nullptr, exe, MAX_PATH)) {
+            std::string p(exe);
+            size_t slash = p.find_last_of('\\');
+            if (slash != std::string::npos) bases.push_back(p.substr(0, slash) + "\\savegames");
+        }
+    }
     if (const char* pf = std::getenv("ProgramFiles(x86)"))
         bases.push_back(std::string(pf) + "\\Ubisoft\\Ubisoft Game Launcher\\savegames");
     if (const char* pf = std::getenv("ProgramFiles"))
