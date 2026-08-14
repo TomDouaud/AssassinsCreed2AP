@@ -686,6 +686,10 @@ DWORD WINAPI worker(LPVOID) {
                 else if (op == "tax") done = ac2ap::game::tax_money((int)arg);
                 else if (op == "money") done = ac2ap::game::add_money((int)arg);
                 else if (op == "kill") done = ac2ap::game::kill_player();
+                else if (op == "skipcine") {   // roadmap B: skip the current cinematic
+                    done = ac2ap::game::skip_cinematic();
+                    logf("SKIPCINE -> %s", done ? "dispatched" : "failed (not in a cinematic, or wrong build)");
+                }
                 else if (op == "haddr") {   // logs the health object -> HWBP target for the death-writer hunt
                     uintptr_t hp = ac2ap::game::resolve_health_addr();
                     logf("HADDR curHP@%08X (hwbp this addr)  obj@%08X",

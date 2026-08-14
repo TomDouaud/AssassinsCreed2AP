@@ -742,4 +742,39 @@ inline bool is_desynced() {
 // Sets health to 1 (Bad Medicine trap). false if out-of-game.
 inline bool cripple_health() { return set_health(1); }
 
+// --- Skip the current cinematic ------------------------------------------------------------
+// The engine routes named UI actions ("Quit", "ReloadLastCheckpoint", "RestartMemory",
+// "AbortMemory", "SkipCinematic", "ExitReplayMode") through one handler; the SkipCinematic
+// branch is just three cdecl calls taking no arguments:
+//     prepare(); ev = skip_event(); dispatch(ev);
+// where dispatch is the same generic event broadcast SetNotoriety goes through, and skip_event
+// hands back the engine's MissionSkipCinematicEvent singleton. Found by decompiling the handler
+// that references the "SkipCinematic" string (Ghidra).
+// The RVAs are build-specific, so each prologue is verified before anything is called - a
+// mismatch simply disables the feature instead of jumping into the wrong code.
+constexpr uintptr_t SKIP_PREPARE_RVA  = 0xE20880;   // FUN_01220880
+constexpr uintptr_t SKIP_EVENT_RVA    = 0x2119E0;   // FUN_006119e0 -> event object
+constexpr uintptr_t SKIP_DISPATCH_RVA = 0x00F82F0;  // FUN_004f82f0 (shared event dispatch)
+
+inline bool skip_cinematic() {
+    uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
+    auto* prep = (const uint8_t*)(base + SKIP_PREPARE_RVA);
+    auto* evt  = (const uint8_t*)(base + SKIP_EVENT_RVA);
+    auto* disp = (const uint8_t*)(base + SKIP_DISPATCH_RVA);
+    static const uint8_t P_PREP[6] = {0x55, 0x8B, 0xEC, 0x6A, 0xFF, 0x68};
+    static const uint8_t P_EVT[6]  = {0x55, 0x8B, 0xEC, 0x64, 0xA1, 0x00};
+    static const uint8_t P_DISP[6] = {0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x08};
+    if (memcmp(prep, P_PREP, 6) || memcmp(evt, P_EVT, 6) || memcmp(disp, P_DISP, 6))
+        return false;                      // not the build these RVAs were mapped on
+    __try {
+        ((void(__cdecl*)())prep)();
+        int ev = ((int(__cdecl*)())evt)();
+        if (!ev) return false;             // no event object -> not in a cinematic
+        ((void(__cdecl*)(int))disp)(ev);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 } // namespace ac2ap::game
