@@ -588,13 +588,15 @@ DWORD WINAPI worker(LPVOID) {
             ULONGLONG now = GetTickCount64();
             if (now - last > 6000) {
                 last = now;
-                // Translate the cryptic asio strings into something actionable.
-                std::string hint = msg;
-                if (msg.find("End of file") != std::string::npos)
-                    hint = "server closed the connection (wrong port, or room not running?)";
-                else if (msg.find("refused") != std::string::npos)
-                    hint = "connection refused (server down, or wrong host:port?)";
-                ac2ap::overlay::toast("Can't reach server: " + hint + " - F8 to edit",
+                // Never put the raw socket error on screen: for connection failures that string
+                // comes from Windows and is in the system language, so players got a French (or
+                // German, or ...) sentence in the middle of an English overlay - and it told them
+                // nothing they could act on anyway. Our own wording, always; the raw message
+                // stays in the log above for diagnosis.
+                const char* hint = "check the address, and that the room is still running";
+                if (msg.find("End of file") != std::string::npos)   // asio's own text, not localized
+                    hint = "the server closed the connection - wrong port, or room not running?";
+                ac2ap::overlay::toast(std::string("Can't reach server: ") + hint + " (F8 to edit)",
                                       IM_COL32(240, 120, 120, 255), 6000);
             }
         });

@@ -18,9 +18,14 @@ you do NOT need to build anything.
   Settings → General → uncheck "Enable cloud save synchronisation"), on ANY version.
   If it's on, Ubisoft overwrites your local save with the cloud copy at launch — it
   reverts your progress and the client stops seeing your checks. Disable it first.
-- An **ASI loader** so the game loads `.asi` mods — e.g.
-  [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases):
-  download `dinput8.dll` (or `winmm.dll`) and drop it next to the game `.exe`.
+- An **ASI loader** so the game loads `.asi` mods:
+  [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases).
+  On that page take **`d3d9.dll`** from the **Win32** column, and drop it next to
+  `AssassinsCreedIIGame.exe`. Assassin's Creed II is a 32-bit DirectX 9 game, so:
+  - **Win32**, never Win64 — the Win64 file will not load at all.
+  - **`d3d9.dll`**, not `d3d8.dll` — the game never loads a `d3d8.dll`, so nothing
+    happens (this trips people up). `winmm.dll` or `dinput8.dll` also work if you
+    already have one of those.
 - **Archipelago** 0.6.7+ ([download](https://github.com/ArchipelagoMW/Archipelago/releases)).
 
 ## 1. Install the world (once)

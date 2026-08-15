@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.7 — alpha
+
+- **Fixed: checks fired when you STARTED a mission instead of finishing it** — one
+  memory ahead of you, which also made Sequence 2 look out of order. The game writes
+  a mission record as soon as the memory becomes available and only marks it done on
+  completion; we were reporting it on sight. The per-district collectible bundles had
+  the same problem and were firing on district entry. Verified in-game.
+- **Glyph puzzles are now supported** (20 locations, `glyphs` option). Glyphs are the
+  one collectible the game never writes to the save, so their solved state is read
+  live from the Animus Database — meaning the game has to be running for one to
+  register.
+- **Fixed: the client was starting up to 35 times per launch.** The ASI loader also
+  injects into the launcher and Uplay helper processes next to the game, and each
+  one started its own client: several connections for one slot, all writing the same
+  state files. Only the game process runs the client now.
+- **Save detection**: the client watches the *most recently modified* save instead of
+  assuming `1.save`, also looks inside `<game folder>\savegames\` (a layout the Uplay
+  wrapper creates), and warns loudly when the save it picked looks empty. Watching the
+  wrong file is the most common cause of "it connects and receives items but never
+  sends anything".
+- Received shop equipment now says `[not granted in-game yet]`, so nobody hunts for
+  gear that will not appear.
+- Location checks are retried with a backoff until the server acknowledges them.
+
 ## 0.1.6 — alpha
 
 - **Fixed: checks only registering after reconnecting.** A websocket can die

@@ -52,8 +52,16 @@ disables anything not yet proven stable.
 ## Requirements
 
 - Assassin's Creed II for PC (build **1.01**, 32-bit `AssassinsCreedIIGame.exe`).
-- An [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases) (or
-  equivalent, e.g. a `winmm.dll`/`dinput8.dll` proxy) so the game loads `.asi` mods.
+- An [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases) so the
+  game loads `.asi` mods. On that page, take **`d3d9.dll`** from the **Win32** column —
+  Assassin's Creed II is a 32-bit DirectX 9 game, so:
+  - **Win32**, never Win64 — the Win64 file simply will not load.
+  - **`d3d9.dll`**, not `d3d8.dll` — the game never loads a `d3d8.dll`, so nothing happens.
+    (`winmm.dll` or `dinput8.dll` from the same page work too, if you already have one.)
+
+  ![Which file to download: d3d9.dll, Win32 column](assets/img/asi-loader-d3d9-win32.png)
+
+  Drop that DLL next to `AssassinsCreedIIGame.exe`.
 - [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases) 0.6.7+ to
   generate a seed and run the server.
 
@@ -98,6 +106,12 @@ the source tree.
      it). Example:
      `save_path=C:\Program Files (x86)\Ubisoft\Ubisoft Game Launcher\savegames\1234567\4\2.save`
 
+4. Press **F8** (or **INSERT**) to open the connection menu, type your **server**
+   (`host:port`), **slot** and **password**, then click **Connect**. A green
+   "Connected" toast confirms it. (Ezio stays still while the menu is open; your
+   values are saved back to `AC2AP.ini`.)
+
+
 ### Using other mods alongside AC2AP
 
 AC2AP is a normal ASI plugin, so it coexists with other AC2 ASI mods — one ASI
@@ -109,11 +123,6 @@ Tested together: **[EaglePatch AC2](https://github.com/Sergeanur/EaglePatch)**
 Cheat Engine tables rather than `.asi` plugins — such as the Definitive AC2 Parkour
 Mod — run through Cheat Engine and are unaffected by AC2AP either way; players have
 run them together successfully.
-4. Press **F8** (or **INSERT**) to open the connection menu, type your **server**
-   (`host:port`), **slot** and **password**, then click **Connect**. A green
-   "Connected" toast confirms it. (Ezio stays still while the menu is open; your
-   values are saved back to `AC2AP.ini`.)
-
 Received items and checks show up as on-screen toasts. The client also logs to
 `AC2AP.log` next to the `.asi`.
 
