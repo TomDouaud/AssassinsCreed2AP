@@ -578,10 +578,26 @@ inline volatile LONG g_death_hook_any = 0;     // DIAG: every hp<0 call, any ent
                                                // and the g_health_obj filter can be dropped.
 inline bool g_sethealth_installed = false;
 
+// Is the captured "Ezio health" object still believable? The capture is known to latch onto the
+// wrong object sometimes (measured live: cur=4279906932 max=4291501413), and when it does, an
+// equality test against it silently rejects every real death.
+inline bool health_obj_plausible() {
+    uintptr_t obj = (uintptr_t)g_health_obj;
+    if (!obj || obj < 0x10000) return false;
+    uint32_t cur = 0, mx = 0;
+    if (!safe_read(obj + 0x58, &cur, 4) || !safe_read(obj + 0x5C, &mx, 4)) return false;
+    return mx >= 1 && mx <= 200 && cur <= mx;
+}
+
 inline void __fastcall sethealth_detour(void* thisp, void* /*edx*/, int hp) {
     if (hp < 0) {
         InterlockedIncrement(&g_death_hook_any);
-        if (thisp == (void*)g_health_obj)
+        // Prefer Ezio's captured health object when we can trust it. When we cannot, accept the
+        // call anyway rather than lose the death: this path measured player-only in-game (killing
+        // guards never reaches it - see the g_death_hook_any diagnostic), so the filter is a
+        // refinement, not the thing keeping other entities out.
+        void* ezio = (void*)g_health_obj;
+        if (thisp == ezio || !health_obj_plausible())
             InterlockedExchange(&g_death_hook_flag, 1);
     }
     ((void(__fastcall*)(void*, void*, int))g_sethealth_tramp)(thisp, nullptr, hp);
