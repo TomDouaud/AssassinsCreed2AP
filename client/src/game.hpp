@@ -112,6 +112,29 @@ inline uintptr_t find_aob(const uint8_t* pat, size_t n) {
     return 0;
 }
 
+// Same as find_aob, but bytes whose mask entry is 0 are wildcards. Needed to match code that
+// contains relative call/jump offsets, which differ between builds even when the code is
+// identical - matching the fixed opcodes and reading the offsets afterwards is what makes a
+// signature survive across the Skidrow / Steam / Ubisoft executables.
+inline uintptr_t find_aob_masked(const uint8_t* pat, const uint8_t* mask, size_t n) {
+    auto base = (uintptr_t)GetModuleHandleA(nullptr);
+    auto dos = (IMAGE_DOS_HEADER*)base;
+    auto nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
+    auto sec = IMAGE_FIRST_SECTION(nt);
+    for (WORD s = 0; s < nt->FileHeader.NumberOfSections; s++, sec++) {
+        if (!(sec->Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+        const uint8_t* p = (const uint8_t*)(base + sec->VirtualAddress);
+        size_t len = sec->Misc.VirtualSize;
+        for (size_t i = 0; i + n <= len; i++) {
+            size_t k = 0;
+            for (; k < n; k++)
+                if (mask[k] && p[i + k] != pat[k]) break;
+            if (k == n) return (uintptr_t)(p + i);
+        }
+    }
+    return 0;
+}
+
 // Resolves pBhvAssassin (base shared by money, health, inventory), 0 if unavailable.
 inline uintptr_t resolve_bhv() {
     static uintptr_t s_static = 0;   // static address, constant for the session
@@ -539,7 +562,15 @@ inline uintptr_t resolve_health_addr(uintptr_t* max_out = nullptr) {
 // (the same flag kill_player writes). Hooking the call itself catches EVERY death - including
 // instant falls that the 250 ms health poll misses. Guards go through the same function, so
 // the detour filters this == g_health_obj (Ezio's captured health object).
-constexpr uintptr_t SETHEALTH_RVA = 0x11FE0B0;
+// Located by pattern, not by address: a fixed RVA only matches the build it was mapped on, and
+// the Steam/Ubisoft executable differs from the Skidrow one - so the hook silently never
+// installed there, leaving those players without fall-death detection. This 16-byte signature is
+// unique in the executable and covers the function's own prologue:
+//   55 8B EC        push ebp; mov ebp,esp
+//   56 8B F1        push esi; mov esi,ecx        (this)
+//   8B 46 58        mov eax,[esi+58]             (current HP)
+//   57              push edi
+//   89 86 C0000000  mov [esi+C0],eax             (stash the old HP - see the decompile)
 inline void* g_sethealth_tramp = nullptr;
 inline volatile LONG g_death_hook_flag = 0;    // set on Ezio SetHealth(hp<0); worker consumes
 inline volatile LONG g_death_hook_any = 0;     // DIAG: every hp<0 call, any entity. If guard
@@ -562,11 +593,10 @@ inline bool install_sethealth_hook() {
     static bool tried = false;
     if (tried) return false;                   // one attempt: prologue mismatch = wrong build
     tried = true;
-    uint8_t* p = (uint8_t*)((uintptr_t)GetModuleHandleA(nullptr) + SETHEALTH_RVA);
-    // exact 1.01 prologue (push ebp; mov ebp,esp; push esi; mov esi,ecx; mov eax,[esi+58]):
-    // the RVA is build-specific, so never patch if the bytes don't match.
-    static const uint8_t PRO[8] = {0x55, 0x8B, 0xEC, 0x56, 0x8B, 0xF1, 0x8B, 0x46};
-    if (memcmp(p, PRO, sizeof(PRO)) != 0) return false;
+    static const uint8_t AOB[] = {0x55, 0x8B, 0xEC, 0x56, 0x8B, 0xF1, 0x8B, 0x46,
+                                  0x58, 0x57, 0x89, 0x86, 0xC0, 0x00, 0x00, 0x00};
+    uint8_t* p = (uint8_t*)find_aob(AOB, sizeof(AOB));
+    if (!p) return false;                      // signature absent: leave the game alone
     if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED) return false;
     if (MH_CreateHook((void*)p, (void*)&sethealth_detour, &g_sethealth_tramp) != MH_OK) return false;
     if (MH_EnableHook((void*)p) != MH_OK) return false;
@@ -815,27 +845,41 @@ inline bool glyph_solved(int i) {
 // where dispatch is the same generic event broadcast SetNotoriety goes through, and skip_event
 // hands back the engine's MissionSkipCinematicEvent singleton. Found by decompiling the handler
 // that references the "SkipCinematic" string (Ghidra).
-// The RVAs are build-specific, so each prologue is verified before anything is called - a
-// mismatch simply disables the feature instead of jumping into the wrong code.
-constexpr uintptr_t SKIP_PREPARE_RVA  = 0xE20880;   // FUN_01220880
-constexpr uintptr_t SKIP_EVENT_RVA    = 0x2119E0;   // FUN_006119e0 -> event object
-constexpr uintptr_t SKIP_DISPATCH_RVA = 0x00F82F0;  // FUN_004f82f0 (shared event dispatch)
-
+// Rather than hardcoding the three addresses (build-specific, and wrong on Steam/Ubisoft), we
+// find the call site itself. This masked signature is unique in the executable - the wildcards
+// are the relative call offsets, which we then decode to get the real function addresses:
+//   83 C4 08     add esp,8          } tail of the "SkipCinematic" name comparison
+//   85 C0  75 ?? test eax,eax; jnz  }
+//   E8 <rel>     call prepare        -> +7
+//   8B F0        mov esi,eax         (kept: it becomes `this` below)
+//   E8 <rel>     call get_event      -> +14
+//   50           push eax            (the event, as the argument)
+//   8B CE        mov ecx,esi         <- dispatch is a __thiscall, NOT cdecl: Ghidra typed it
+//   E8 <rel>     call dispatch       -> +22    as one argument and missed the ecx.
 inline bool skip_cinematic() {
-    uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
-    auto* prep = (const uint8_t*)(base + SKIP_PREPARE_RVA);
-    auto* evt  = (const uint8_t*)(base + SKIP_EVENT_RVA);
-    auto* disp = (const uint8_t*)(base + SKIP_DISPATCH_RVA);
-    static const uint8_t P_PREP[6] = {0x55, 0x8B, 0xEC, 0x6A, 0xFF, 0x68};
-    static const uint8_t P_EVT[6]  = {0x55, 0x8B, 0xEC, 0x64, 0xA1, 0x00};
-    static const uint8_t P_DISP[6] = {0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x08};
-    if (memcmp(prep, P_PREP, 6) || memcmp(evt, P_EVT, 6) || memcmp(disp, P_DISP, 6))
-        return false;                      // not the build these RVAs were mapped on
+    static const uint8_t PAT[] = {0x83, 0xC4, 0x08, 0x85, 0xC0, 0x75, 0x00,
+                                  0xE8, 0, 0, 0, 0, 0x8B, 0xF0,
+                                  0xE8, 0, 0, 0, 0, 0x50, 0x8B, 0xCE,
+                                  0xE8, 0, 0, 0, 0};
+    static const uint8_t MSK[] = {1, 1, 1, 1, 1, 1, 0,
+                                  1, 0, 0, 0, 0, 1, 1,
+                                  1, 0, 0, 0, 0, 1, 1, 1,
+                                  1, 0, 0, 0, 0};
+    uintptr_t m = find_aob_masked(PAT, MSK, sizeof(PAT));
+    if (!m) return false;                  // signature absent: do nothing at all
+    auto call_target = [m](size_t at) -> uintptr_t {
+        int32_t rel = 0;
+        std::memcpy(&rel, (const void*)(m + at + 1), 4);
+        return m + at + 5 + rel;           // E8 is relative to the next instruction
+    };
+    auto prepare   = (void*(__cdecl*)())call_target(7);
+    auto get_event = (void*(__cdecl*)())call_target(14);
+    auto dispatch  = (void(__fastcall*)(void*, void*, void*))call_target(22);
     __try {
-        ((void(__cdecl*)())prep)();
-        int ev = ((int(__cdecl*)())evt)();
+        void* self = prepare();
+        void* ev = get_event();
         if (!ev) return false;             // no event object -> not in a cinematic
-        ((void(__cdecl*)(int))disp)(ev);
+        dispatch(self, nullptr, ev);       // __fastcall(this, dummy edx, arg) == __thiscall
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
