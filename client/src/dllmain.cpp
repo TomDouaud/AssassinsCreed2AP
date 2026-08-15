@@ -633,6 +633,10 @@ DWORD WINAPI worker(LPVOID) {
             WritePrivateProfileStringA("ac2ap", "slot", g_slot.c_str(), ini.c_str());
             WritePrivateProfileStringA("ac2ap", "password", g_password.c_str(), ini.c_str());
         }
+        if (ac2ap::overlay::g_skip_requested) {   // U pressed in-game
+            ac2ap::overlay::g_skip_requested = false;
+            logf("SKIPCINE (U) -> %s", ac2ap::game::skip_cinematic() ? "dispatched" : "no cinematic");
+        }
         ac2ap::overlay::g_conn.connected = ap_authenticated;
         if (ac2ap::overlay::g_layout_dirty) {   // menu changed the corners -> persist
             ac2ap::overlay::g_layout_dirty = false;

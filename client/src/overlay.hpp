@@ -50,6 +50,8 @@ struct ConnRequest {
 };
 inline ConnRequest g_conn;
 inline bool g_menu_open = false;
+// Set by the U key, consumed by the worker (which owns the game-memory calls).
+inline volatile bool g_skip_requested = false;
 inline WNDPROC o_WndProc = nullptr;
 
 // Prefill the form fields from the ini (worker calls once at startup).
@@ -144,7 +146,7 @@ inline void render_menu() {
         if (ImGui::Combo("Toasts corner", &tc, CORNER_NAMES, 4)) { g_toast_corner = tc; g_layout_dirty = true; }
         if (ImGui::Combo("Status corner", &sc, CORNER_NAMES, 4)) { g_status_corner = sc; g_layout_dirty = true; }
     }
-    ImGui::TextDisabled("INSERT / F8: this menu   -   F9: status / breakdown");
+    ImGui::TextDisabled("INSERT / F8: this menu   -   F9: status   -   U: skip cinematic");
     ImGui::End();
 }
 
@@ -250,6 +252,12 @@ inline void poll_toggle() {
     bool status = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;   // F9 cycles status pages
     if (status && !prev_status) g_status_page = (g_status_page + 1) % STATUS_PAGES;
     prev_status = status;
+    // U skips the current cinematic. Ignored while the connection menu is open, otherwise
+    // typing a "u" into the server field would fire it. The worker does the actual call.
+    static bool prev_skip = false;
+    bool skip = !g_menu_open && (GetAsyncKeyState('U') & 0x8000) != 0;
+    if (skip && !prev_skip) g_skip_requested = true;
+    prev_skip = skip;
 }
 
 // VK -> ImGuiKey for the keys InputText navigation/shortcuts need (the rest come as characters).
