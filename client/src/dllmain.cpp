@@ -715,6 +715,18 @@ DWORD WINAPI worker(LPVOID) {
                     logf("GLYPHS count=%d solved=[%s]", n, buf);
                     done = n > 0;
                 }
+                else if (op == "cine") {       // read-only: inspect the current cinematic
+                    uintptr_t mgr = ac2ap::game::cine_mgr(), c = ac2ap::game::cine_current();
+                    logf("CINE mgr=%08X current=%08X", (unsigned)mgr, (unsigned)c);
+                    if (c) {
+                        uint32_t vt = 0; ac2ap::game::rd32(c, vt);
+                        logf("CINE vtable=%08X (rva %08X)", vt,
+                             (unsigned)(vt - (uintptr_t)GetModuleHandleA(nullptr)));
+                        dump40(c);
+                        dump40(c + 0x40);
+                    }
+                    done = mgr != 0;
+                }
                 else if (op == "skipcine") {   // roadmap B: skip the current cinematic
                     done = ac2ap::game::skip_cinematic();
                     logf("SKIPCINE -> %s", done ? "dispatched" : "failed (not in a cinematic, or wrong build)");

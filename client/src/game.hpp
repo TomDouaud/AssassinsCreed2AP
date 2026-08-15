@@ -853,6 +853,47 @@ inline bool glyph_solved(int i) {
     return safe_read(o + 0x44, &b, 1) && ((b >> 1) & 1) != 0;
 }
 
+// --- Cinematic state (investigation) --------------------------------------------------------
+// AC2 has no cutscene skip - it arrived in Brotherhood - so there is no native "skip" to call for
+// in-engine cinematics; what we found earlier only drives the pre-rendered video player, which
+// the game already lets you skip. The game does however KNOW when a cinematic is playing: the
+// pause menu answers "PauseIsInCinematic" with
+//     mgr = *(u32*)<global> ; playing = *(u32*)(mgr + 0x928) != 0
+// and that global is reachable without hardcoding an address:
+//     E8 <rel>            call <getter>          <- unique when paired with the compare below
+//     39 98 28 09 00 00   cmp [eax+0x928], ebx
+//     <getter>: A1 <abs32> C3                    -> mov eax,[global]; ret
+// Read-only: this reads exactly what the pause menu reads.
+inline uintptr_t cine_mgr() {
+    static uintptr_t s_global = 0;
+    if (!s_global) {
+        static const uint8_t PAT[] = {0xE8, 0, 0, 0, 0, 0x39, 0x98, 0x28, 0x09, 0x00, 0x00};
+        static const uint8_t MSK[] = {1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1};
+        uintptr_t m = find_aob_masked(PAT, MSK, sizeof(PAT));
+        if (!m) return 0;
+        int32_t rel = 0;
+        std::memcpy(&rel, (const void*)(m + 1), 4);
+        uintptr_t getter = m + 5 + rel;
+        uint8_t op = 0;
+        if (!safe_read(getter, &op, 1) || op != 0xA1) return 0;   // expect mov eax,[abs32]
+        uint32_t g = 0;
+        if (!safe_read(getter + 1, &g, 4) || g < 0x10000) return 0;
+        s_global = g;
+    }
+    uint32_t mgr = 0;
+    if (!rd32(s_global, mgr) || mgr < 0x10000) return 0;
+    return mgr;
+}
+
+// Pointer to the cinematic currently playing, 0 when none. Same field the pause menu tests.
+inline uintptr_t cine_current() {
+    uintptr_t mgr = cine_mgr();
+    if (!mgr) return 0;
+    uint32_t c = 0;
+    if (!rd32(mgr + 0x928, c) || c < 0x10000) return 0;
+    return c;
+}
+
 // --- Skip the current cinematic ------------------------------------------------------------
 // The engine routes named UI actions ("Quit", "ReloadLastCheckpoint", "RestartMemory",
 // "AbortMemory", "SkipCinematic", "ExitReplayMode") through one handler; the SkipCinematic
