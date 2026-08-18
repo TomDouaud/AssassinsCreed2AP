@@ -104,6 +104,42 @@ constexpr uint64_t REC_FEATHER_COUNTER = 0x000000005B6A6F41ull; // global feathe
 
 // Number of codex pages picked up: distinct ids from the "acquired item" record whose ID
 // falls in the codex ranges (0x4658D3xx / 0x45B9E6xx - verified codex-only).
+// --- Codex pages -----------------------------------------------------------------------------
+// Codex state lives in the save as a serialised list of boolean arrays, each written as
+// <count:u32><count bytes of 0/1>. The codex one holds 30 entries - one per page - and is the
+// array immediately followed by a 36-entry array, which is what tells it apart from the other
+// 30-entry array in the file (verified on six saves: it reads 0 at Sequence 1, 30 on a completed
+// game, and matched the player's in-game "23 decoded" exactly).
+//
+// This replaces counting codex records in the acquired-items list. That count was NOT the pages
+// you own: those records are transient (a page sits there until it is decoded, then goes away),
+// so the count went up AND down - a completed save, which requires all 30 pages, contains none of
+// them. Since checks were only sent when the count passed its previous maximum, codex checks went
+// silent for good after the first few pages (reported by a player: "the ones in Forli, Toscana
+// and Venezia don't send anything").
+constexpr int CODEX_PAGES = 30;
+
+// Fills flags[30] with the per-page state. false if the array could not be located.
+inline bool read_codex_flags(const uint8_t* buf, size_t len, uint8_t flags[CODEX_PAGES]) {
+    if (len < 4 + CODEX_PAGES + 4) return false;
+    for (size_t i = 0; i + 4 + CODEX_PAGES + 4 <= len; i++) {
+        uint32_t n;
+        std::memcpy(&n, buf + i, 4);
+        if (n != CODEX_PAGES) continue;
+        const uint8_t* a = buf + i + 4;
+        bool boolish = true;
+        for (int k = 0; k < CODEX_PAGES; k++)
+            if (a[k] > 1) { boolish = false; break; }
+        if (!boolish) continue;
+        uint32_t next;
+        std::memcpy(&next, a + CODEX_PAGES, 4);
+        if (next != 36) continue;              // the array that follows identifies the codex one
+        std::memcpy(flags, a, CODEX_PAGES);
+        return true;
+    }
+    return false;
+}
+
 inline int count_codex(const RecordCounts& counts) {
     int n = 0;
     for (const auto& [k, cnt] : counts)

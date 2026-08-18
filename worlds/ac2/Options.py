@@ -54,10 +54,12 @@ class Glyphs(Toggle):
 
 
 class CodexPages(Toggle):
-    """Include finding Codex pages as locations.
+    """Include Codex pages as locations (30 of them).
 
-    Count-based : the Nth codex page picked up sends "Codex Page #N" (detected via the
-    acquired-item save records in the codex id ranges, 06/07).
+    Each page is its own check, read from the per-page state the save keeps. A page
+    registers once it has been DECODED (Leonardo does that when you bring pages to
+    him), not at the instant you pick it out of a chest - so expect the check a little
+    after the pickup.
     """
     display_name = "Codex Pages"
     default = 0

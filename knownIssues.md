@@ -2,6 +2,9 @@
 
 This is an early alpha. Known limitations:
 
+- **Codex pages register when decoded.** Each of the 30 pages is its own check, read
+  from the save. A page counts once Leonardo has decoded it rather than at the moment
+  you open the chest, so the check can arrive a little after the pickup.
 - **Glyphs now work** (20 locations, `glyphs` option). They are the one collectible the
   game never writes to the save, so the client reads their solved state live from the
   Animus Database: the game must be running for a solved glyph to register.

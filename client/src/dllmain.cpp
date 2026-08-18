@@ -287,6 +287,8 @@ constexpr uint64_t REC_PRESENCE = 0x50524553454E4345ull;  // "PRESENCE"
 // Glyph puzzles are never written to the save, so they are polled from RAM instead; this
 // sentinel type lets them share the same `seen` dedup set as everything else (id = glyph index).
 constexpr uint64_t REC_GLYPH = 0x474C595048505A4Cull;     // "GLYPHPZL"
+// Codex pages come from a boolean array in the save, not from records: same sentinel trick.
+constexpr uint64_t REC_CODEX = 0x434F444558504745ull;      // "CODEXPGE"
 
 inline bool buf_has_u32(const std::vector<uint8_t>& buf, uint32_t id) {
     if (buf.size() < 4) return false;
@@ -1119,7 +1121,6 @@ DWORD WINAPI worker(LPVOID) {
                     if (it->second[i]) locs.insert(it->second[i]);
             };
             resync_counted("VIEWPOINT", cur_vp);
-            resync_counted("CODEX", cur_codex);
             resync_counted("FEATHER", cur_feather);
 
             // The server tells us every location for our slot: missing + checked = the seed's
@@ -1199,7 +1200,27 @@ DWORD WINAPI worker(LPVOID) {
         (void)cur_vp;
         // CODEX by count: ranges 0x4658D3xx/0x45B9E6xx = codex-ONLY (verified against catalog),
         // bounded and reliable (7 collected ids, no contamination). Nth page = "Codex Page #N".
-        send_counted("CODEX", cur_codex);
+        // Codex: per-page flags from the save (see read_codex_flags). Replaces the old
+        // count-based send, which silently stopped firing once the transient record count
+        // dipped below its previous maximum.
+        {
+            auto cit = counted.find("CODEX");
+            uint8_t cflags[ac2ap::CODEX_PAGES];
+            if (cit != counted.end() && ac2ap::read_codex_flags(buf.data(), buf.size(), cflags)) {
+                for (int i = 0; i < ac2ap::CODEX_PAGES && i < (int)cit->second.size(); i++) {
+                    int64_t loc = cit->second[i];
+                    if (!cflags[i] || !loc) continue;
+                    ac2ap::RecordKey ck{REC_CODEX, (uint32_t)i};
+                    if (seen.count(ck)) continue;
+                    seen.insert(ck);
+                    save_seen(seen);
+                    pending.push_back(loc);
+                    queued = true;
+                    { int c = cat_of(loc); if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; } }
+                    logf("CHECK CODEX #%d -> location AP %lld", i + 1, (long long)loc);
+                }
+            }
+        }
         // FEATHER disabled: the feather counter is not reliably identified
         // (record 5B6A6F41/25620DBE unchanged between 4 and 5 feathers; in-place change
         // buried in the noise). Re-enable after a clean isolated lab (LIM-002). cur_feather
