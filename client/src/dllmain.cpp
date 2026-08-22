@@ -51,6 +51,9 @@ constexpr int64_t TRAP_WANTED = 20240012103;        // notoriety -> max (guards 
 
 namespace {
 
+// Printed at startup: support reports are unreadable without knowing the build.
+#define AC2AP_VERSION "v0.1.8-dev"
+
 std::string g_dir;          // folder of the .asi
 bool g_hmon = false;        // dev: health/death monitor (toggled by the `hmon` cmd)
 FILE* g_log = nullptr;
@@ -425,7 +428,7 @@ DWORD WINAPI worker(LPVOID) {
     g_ap_enabled = !g_server.empty() && !g_slot.empty() && g_slot != "YourSlotName";
     ac2ap::game::g_health_hook_enabled = ini_get(ini, "enable_health_hook", "0") == "1";
 
-    logf("AC2AP v0 started. save=%s server=%s slot=%s ap=%d",
+    logf("AC2AP %s started. save=%s server=%s slot=%s ap=%d", AC2AP_VERSION,
          g_save_path.c_str(), g_server.c_str(), g_slot.c_str(), (int)g_ap_enabled);
 
     // In-game overlay (D3D9 + ImGui): opt-in, off by default. Installed lazily in the loop
@@ -462,6 +465,7 @@ DWORD WINAPI worker(LPVOID) {
     int applied_index = load_applied_index();
     bool first_pass = true;
     bool resync_pending = false;   // set on connect: re-send every check already done in the save
+    std::set<int64_t> seed_locs;   // locations this slot actually has (from the server, on connect)
     logf("items already applied: index <= %d", applied_index);
 
 #ifdef AC2AP_WITH_AP
@@ -870,8 +874,16 @@ DWORD WINAPI worker(LPVOID) {
                 static ULONGLONG retry_in = 10000;   // grows while nothing gets acked
                 std::set<int64_t> acked = ap->get_checked_locations();
                 size_t before = pending.size();
+                // Drop anything this slot cannot have. AC2AP_map.txt lists every category, but a
+                // seed only contains the ones the player enabled, so detection can queue locations
+                // that simply do not exist for them. The server ignores those, they are never
+                // acknowledged, and the retry below would then re-send them every 10 s forever
+                // (seen in a report: 586 checks resent endlessly against a 351-location seed).
                 pending.erase(std::remove_if(pending.begin(), pending.end(),
-                                             [&](int64_t id) { return acked.count(id) != 0; }),
+                                             [&](int64_t id) {
+                                                 return acked.count(id) != 0 ||
+                                                        (!seed_locs.empty() && !seed_locs.count(id));
+                                             }),
                               pending.end());
                 if (pending.size() != before) {
                     save_pending(pending);
@@ -1133,6 +1145,7 @@ DWORD WINAPI worker(LPVOID) {
             std::set<int64_t> done = checked;
             for (auto id : locs) if (seed.count(id)) done.insert(id);
 
+            seed_locs = seed;          // used to drop checks this slot cannot have
             for (int i = 0; i < CAT_N; i++) { cat_total[i] = 0; cat_done[i] = 0; }
             for (auto id : seed) { int c = cat_of(id); if (c >= 0) cat_total[c]++; }
             for (auto id : done) { int c = cat_of(id); if (c >= 0) cat_done[c]++; }
