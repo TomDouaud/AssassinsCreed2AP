@@ -173,7 +173,13 @@ GLYPH_COUNT = 20
 def _build_glyph_locations() -> Dict[str, AC2LocationData]:
     locations: Dict[str, AC2LocationData] = {}
     for i in range(GLYPH_COUNT):
-        region = GLYPH_REGIONS[i % len(GLYPH_REGIONS)]
+        # Every glyph is placed in the LAST region rather than round-robin across the cities.
+        # The round-robin was a placeholder from when glyph detection did nothing, and it lies:
+        # it told the generator that, say, Glyph #1 sits in Florence when the glyph is physically
+        # in Venice, so a player could see the check as reachable and be unable to do it (reported).
+        # Until the real per-glyph cities are mapped, the last region is the safe choice: it never
+        # promises early access, and checking a glyph earlier than logic expects is harmless.
+        region = GLYPH_REGIONS[-1]
         locations[f"Glyph #{i + 1}"] = AC2LocationData(GLYPHS_BASE + i, region)
     return locations
 
