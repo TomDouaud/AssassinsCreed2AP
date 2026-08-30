@@ -73,16 +73,16 @@ the source tree.
 
 1. Drop `ac2.apworld` into your Archipelago `custom_worlds/` folder, then
    generate a game as usual with an `ac2` YAML.
-2. Copy the client files into the game's ASI scripts folder (next to the loader):
+2. Copy the client files into a new folder called `scripts/` (In the root folder of AC2):
    - `AC2AP.asi`
    - `AC2AP.ini`
    - `AC2AP_map.txt`
 
    **The `scripts\` folder does not exist on a fresh install — create it yourself**,
-   next to `AssassinsCreedIIGame.exe`, spelled exactly `scripts`. Nothing creates it
-   for you: the ASI loader only reads it. If you drop the files next to the `.exe`
+   next to `AssassinsCreedIIGame.exe`, spelled exactly `scripts`.
+   The ASI loader only reads it. If you drop the files next to the `.exe`
    instead, the loader ignores them and the client never starts.
-3. Launch the game and load a save. The connection is done in-game, so no ini
+4. Launch the game and load a save. The connection is done in-game, so no ini
    editing is needed for that. The save path **auto-detects Ubisoft Connect and
    Skidrow** installs — a green **"Save found"** toast confirms it (a red one means
    set `save_path` yourself). Notes:
@@ -111,7 +111,7 @@ the source tree.
      it). Example:
      `save_path=C:\Program Files (x86)\Ubisoft\Ubisoft Game Launcher\savegames\1234567\4\2.save`
 
-4. Press **F8** (or **INSERT**) to open the connection menu, type your **server**
+5. Press **F8** (or **INSERT**) to open the connection menu, type your **server**
    (`host:port`), **slot** and **password**, then click **Connect**. A green
    "Connected" toast confirms it. (Ezio stays still while the menu is open; your
    values are saved back to `AC2AP.ini`.)
