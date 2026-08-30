@@ -15,7 +15,10 @@ class MainMissions(Toggle):
 class SecondaryMissions(Toggle):
     """Include assassination contracts, races, courier and beat-up missions as locations.
 
-    Not yet implemented in this MVP: enabling this has no effect.
+    Kept off: 43 of the 45 are detected fine, but two contracts (Caveat Emptor and
+    Zero Tolerance) have no known game id, so they could never be checked. Enabling
+    the category would let the generator place a required item on one of them and
+    make the seed impossible, so it stays disabled until those two are identified.
     """
     display_name = "Secondary Missions"
     default = 0
@@ -66,9 +69,9 @@ class CodexPages(Toggle):
 
 
 class Tombs(Toggle):
-    """Include Assassin Tombs (seal rooms) as locations.
+    """Include the 6 Assassin Tombs as locations.
 
-    Not yet implemented in this MVP: enabling this has no effect.
+    Completing a tomb sends its check, detected from the save like a story mission.
     """
     display_name = "Assassin Tombs"
     default = 0

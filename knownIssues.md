@@ -8,9 +8,13 @@ This is an early alpha. Known limitations:
 - **Glyphs now work** (20 locations, `glyphs` option). They are the one collectible the
   game never writes to the save, so the client reads their solved state live from the
   Animus Database: the game must be running for a solved glyph to register.
-- **Reserved-but-inactive options.** Viewpoints, Assassin Tombs, secondary
-  missions and villa renovations have option toggles, but enabling them currently
-  has no effect (detection not yet reliable).
+- **Assassin Tombs work** (6 locations, `tombs` option) - completing a tomb sends its
+  check, verified against saves at several points of the story.
+- **Secondary missions stay off.** 43 of the 45 are detected, but two contracts
+  (Caveat Emptor, Zero Tolerance) have no known game id and could never be checked -
+  enabling the category could strand a required item and make a seed impossible.
+- **Reserved-but-inactive options.** Viewpoints and villa renovations have option
+  toggles, but enabling them currently has no effect (detection not yet reliable).
 - **Sequence 2 mission checks fire in the wrong order.** Two of the game records used
   for Sequence 2 (`397E179C` / `397E179F`) are not emitted when their mission is
   completed: one fires in the cascade at the *end of Sequence 1*, the other when you
