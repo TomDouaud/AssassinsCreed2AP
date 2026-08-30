@@ -52,7 +52,7 @@ constexpr int64_t TRAP_WANTED = 20240012103;        // notoriety -> max (guards 
 namespace {
 
 // Printed at startup: support reports are unreadable without knowing the build.
-#define AC2AP_VERSION "v0.1.8-dev"
+#define AC2AP_VERSION "v0.1.8-alpha"
 
 std::string g_dir;          // folder of the .asi
 bool g_hmon = false;        // dev: health/death monitor (toggled by the `hmon` cmd)

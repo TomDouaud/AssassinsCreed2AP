@@ -41,6 +41,11 @@ usually a `scripts\` folder next to the `.exe`, or next to the loader):
 - `AC2AP.ini`
 - `AC2AP_map.txt`
 
+**That `scripts\` folder does not exist on a fresh install — create it yourself**,
+next to `AssassinsCreedIIGame.exe`, spelled exactly `scripts` (no capital, no plural
+mistake). Nothing creates it for you: the ASI loader only reads it, it never makes it.
+Files dropped next to the `.exe` instead are ignored and the client never starts.
+
 The connection is done in-game (F8), so you don't edit the ini for that. The save
 path **auto-detects Ubisoft Connect and Skidrow** installs (slot `1.save`) — a green
 **"Save found"** toast confirms it in-game.
