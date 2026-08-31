@@ -13,6 +13,11 @@ This is an early alpha. Known limitations:
 - **Secondary missions stay off.** 43 of the 45 are detected, but two contracts
   (Caveat Emptor, Zero Tolerance) have no known game id and could never be checked -
   enabling the category could strand a required item and make a seed impossible.
+- **A few locations exist but can never be checked**, because no game id is known for
+  them: `Sequence 5 - Four to the Floor` (Sequence 5's memories share one record block
+  and cannot be told apart), the two contracts above, and 9 of the 10 villa renovations.
+  They are marked EXCLUDED, so the generator only ever puts filler on them and a seed
+  can always be finished - you will simply never collect those particular checks.
 - **Reserved-but-inactive options.** Viewpoints and villa renovations have option
   toggles, but enabling them currently has no effect (detection not yet reliable).
 - **Sequence 2 mission checks fire in the wrong order.** Two of the game records used

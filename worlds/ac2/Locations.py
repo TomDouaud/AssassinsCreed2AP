@@ -543,6 +543,27 @@ for _category in (FEATHER_LOCATIONS, FEATHER_DISTRICT_LOCATIONS,
 
 LOCATION_NAME_TO_ID: Dict[str, int] = {name: data.id for name, data in LOCATION_TABLE.items()}
 
+# --- Locations the client can never send --------------------------------------------------
+# A location with no game id in AC2AP_map.txt can never be checked, so a progression item
+# placed on one strands the seed with no way to finish it. They stay in the table - the ids
+# are positional, and dropping one would renumber every id after it and break the client's
+# map - and are marked EXCLUDED when the regions are built, so the generator may only use
+# them for filler.
+UNCHECKABLE_LOCATIONS: set[str] = {
+    # Sequence 5's memories share a single record block that cannot be told apart; the
+    # candidate id for this one is flagged low-confidence in docs/re/id-map-draft.md, so
+    # gen_map.py deliberately leaves it out. This one matters most: main missions are always
+    # on, so it is in EVERY seed.
+    "Sequence 5 - Four to the Floor",
+    # No game id known - see Options.SecondaryMissions.
+    "Contract - Caveat Emptor",
+    "Contract - Zero Tolerance",
+}
+# Villa renovations: only one building has a known id, the other nine are unmapped.
+UNCHECKABLE_LOCATIONS.update(
+    f"Villa - {_name}" for _i, _name in enumerate(VILLA_BUILDINGS) if _i != 1
+)
+
 GOAL_LOCATION_NAME = "Sequence 14 - In Bocca al Lupo"
 
 

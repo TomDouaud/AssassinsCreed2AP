@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict
 
-from BaseClasses import Region
+from BaseClasses import LocationProgressType, Region
 
-from .Locations import build_active_location_table
+from .Locations import UNCHECKABLE_LOCATIONS, build_active_location_table
 
 if TYPE_CHECKING:
     from . import AC2World
@@ -46,7 +46,12 @@ def create_regions(world: "AC2World") -> None:
 
     for location_name, data in active_locations.items():
         region = regions[data.region]
-        region.locations.append(AC2Location(player, location_name, data.id, region))
+        location = AC2Location(player, location_name, data.id, region)
+        if location_name in UNCHECKABLE_LOCATIONS:
+            # The client has no game id for it, so nothing can ever send this check:
+            # filler only, or the seed could become impossible to finish.
+            location.progress_type = LocationProgressType.EXCLUDED
+        region.locations.append(location)
 
     for region in regions.values():
         multiworld.regions.append(region)
