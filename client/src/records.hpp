@@ -94,10 +94,16 @@ inline std::vector<RecordKey> unseen_keys(const RecordSet& seen, const RecordCou
 
 // Known record types (docs/re/mission-records.md)
 constexpr uint64_t REC_MISSION   = 0x5FDACBA05FDACBA0ull; // memory completed
-// FIX BUG-005 (live capture): viewpoints have their OWN type, never shared.
-// The old 0xC69075ABBF298A20 is actually the generic "item ACQUIRED" record (feathers,
-// codex, equipment...) - counting on it mixed feathers and viewpoints.
-constexpr uint64_t REC_VIEWPOINT = 0xB3195056E38B5102ull; // synchronized viewpoint
+// A record type is a PAIR of CRC32s of the engine's own class names, which is how these
+// constants can be read back: crc32("Mission") == 0x5FDACBA0 (hence the doubled halves
+// above), crc32("MissionStep") == 0xB3195056, crc32("Step") == 0xE38B5102,
+// crc32("InventoryItemSettings") == 0xC69075AB, crc32("ObjectID") == 0x5B6A6F41.
+// So this type is "MissionStep / Step" - a mission STEP, not a viewpoint. That is why a
+// finished save holds 96 of them when the game only has 73 viewpoints, and why some
+// disappear between saves. Counting them cannot yield viewpoints (BUG-005 stays open);
+// the name is kept only because the viewpoints option, which is off and documented as
+// not working, still counts on it.
+constexpr uint64_t REC_VIEWPOINT = 0xB3195056E38B5102ull; // really: MissionStep / Step
 constexpr uint64_t REC_ITEM_ACQ  = 0xC69075ABBF298A20ull; // acquired item (feather/codex/equip)
 constexpr uint64_t REC_LOOT      = 0x00000000DA47DC47ull; // loot/chest
 constexpr uint64_t REC_FEATHER_COUNTER = 0x000000005B6A6F41ull; // global feather counter
