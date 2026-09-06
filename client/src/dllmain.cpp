@@ -363,10 +363,10 @@ const char* type_name(uint64_t t) {
 // --- F9 breakdown: AP location id -> category. Ranges from worlds/ac2/Locations.py -----------
 constexpr int64_t AP_BASE = 20240002000LL;
 enum { CAT_MISSION, CAT_VIEWPOINT, CAT_FEATHER, CAT_GLYPH, CAT_SECONDARY,
-       CAT_TOMB, CAT_SHOP, CAT_VILLA, CAT_STATUE, CAT_CODEX, CAT_CHEST, CAT_N };
+       CAT_TOMB, CAT_SHOP, CAT_VILLA, CAT_STATUE, CAT_CODEX, CAT_CHEST, CAT_DLC, CAT_N };
 static const char* CAT_NAMES[CAT_N] = {
     "Missions", "Viewpoints", "Feathers", "Glyphs", "Secondary",
-    "Tombs", "Shop", "Villa", "Statues", "Codex", "Chests" };
+    "Tombs", "Shop", "Villa", "Statues", "Codex", "Chests", "DLC districts" };
 inline int cat_of(int64_t apid) {
     int64_t off = apid - AP_BASE;
     if (off < 0)     return -1;
@@ -380,7 +380,10 @@ inline int cat_of(int64_t apid) {
     if (off < 8000)  return CAT_VILLA;
     if (off < 8300)  return CAT_STATUE;    // 8200 statues (8000/8100 district bundles unused)
     if (off < 8400)  return CAT_CODEX;
-    if (off < 9000)  return CAT_SECONDARY; // 8400 = DLC liberations, grouped with secondary
+    // 8400 = the two Bonfire of the Vanities district liberations. They used to be shown
+    // under "Secondary", which reads as the secondary-missions category: a player with
+    // secondary_missions off still saw "Secondary 0/2" and reported two missing checks.
+    if (off < 9000)  return CAT_DLC;
     return CAT_CHEST;
 }
 
