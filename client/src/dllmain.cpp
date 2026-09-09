@@ -353,6 +353,23 @@ void save_counted_state(const std::map<std::string, int>& m) {
     for (const auto& [k, v] : m) f << k << " " << v << "\n";
 }
 
+// --- which seed the persisted state above belongs to ---------------------------------------
+// All of it (seen records, applied item index, counted high-water marks) is keyed to ONE seed.
+// Carried into a different seed it silently suppresses checks, so it is wiped on seed change.
+std::string seed_id_path() { return g_dir + "\\AC2AP_seed.txt"; }
+
+std::string load_seed_id() {
+    std::ifstream f(seed_id_path());
+    std::string s;
+    std::getline(f, s);
+    return s;
+}
+
+void save_seed_id(const std::string& s) {
+    std::ofstream f(seed_id_path(), std::ios::trunc);
+    f << s << "\n";
+}
+
 const char* type_name(uint64_t t) {
     if (t == ac2ap::REC_MISSION) return "MISSION";
     if (t == ac2ap::REC_VIEWPOINT) return "VIEWPOINT";
@@ -1121,6 +1138,24 @@ DWORD WINAPI worker(LPVOID) {
         // still suppresses re-toasting. Runs once per connect.
         if (resync_pending && ap && ap_authenticated) {
             resync_pending = false;
+
+            // A (type,id) already seen in a PREVIOUS seed suppresses that check forever in the
+            // new one, because the incremental pass skips anything in `seen` - while a reconnect,
+            // which rebuilds everything from the save, still sends it. That is exactly what a
+            // player reported: chests arrived instantly but story checks only after reconnecting.
+            // Early-story mission ids are identical between playthroughs, so they were always
+            // suppressed; the chests he happened to open were new ids, so those went through.
+            const std::string seed_now = ap->get_seed();
+            if (!seed_now.empty() && seed_now != load_seed_id()) {
+                logf("AP: seed changed -> clearing state left over from the previous seed");
+                seen.clear();          save_seen(seen);
+                pending.clear();       save_pending(pending);
+                applied_index = -1;    save_applied_index(applied_index);
+                counted_state.clear(); save_counted_state(counted_state);
+                save_seed_id(seed_now);
+                ac2ap::overlay::toast("New seed - previous progress state cleared",
+                                      IM_COL32(230, 220, 130, 255), 4000);
+            }
             // Locations this save proves done (all categories, before the seed filter).
             std::set<int64_t> locs;
             for (const auto& [k, cnt] : counts) {
