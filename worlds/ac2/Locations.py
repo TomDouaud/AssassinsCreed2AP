@@ -567,10 +567,20 @@ UNCHECKABLE_LOCATIONS.update(
 GOAL_LOCATION_NAME = "Sequence 14 - In Bocca al Lupo"
 
 
+# Categories whose toggle is accepted but ignored, because nothing can check them. Viewpoints
+# are the only one: the record type the client counts for them decodes to "MissionStep / Step"
+# (see client/src/records.hpp) - mission steps. A finished save holds 96 of those while the game
+# has 73 viewpoints, and some vanish between saves, so turning the option on created 73 locations
+# that the client then ticked off by counting mission progress, handing out checks the player
+# never earned. The option doc has always said enabling it does nothing; now that is true.
+IGNORED_LOCATION_CATEGORIES: set[str] = {"viewpoints"}
+
 def build_active_location_table(options) -> Dict[str, AC2LocationData]:
     """Locations actually in play for one world, gated by its Options toggles."""
     active: Dict[str, AC2LocationData] = dict(MAIN_MISSION_LOCATIONS)
     for option_name, category in OPTIONAL_LOCATION_CATEGORIES.items():
+        if option_name in IGNORED_LOCATION_CATEGORIES:
+            continue
         if getattr(options, option_name).value:
             active.update(category)
     # feathers/chests: district (reliable, default) or individual depending on the chosen sanity.

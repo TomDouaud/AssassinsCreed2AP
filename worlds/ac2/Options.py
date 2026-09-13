@@ -27,9 +27,11 @@ class SecondaryMissions(Toggle):
 class Viewpoints(Toggle):
     """Include synchronizing viewpoints as locations.
 
-    Not yet reliable (BUG-005 still open) : the candidate save record type is shared with tombs /
-    missions / other discovery events, so counting over-fires. Enabling has no effect until the
-    real per-viewpoint discriminant is found (DataBlocks). Kept off.
+    This toggle is currently IGNORED: no viewpoint locations are created either way.
+    The save record we counted for them turned out to be the engine's "MissionStep" - mission
+    steps, not viewpoints. A finished save holds 96 of those for a game with 73 viewpoints, and
+    some vanish between saves, so counting them handed out checks that were never earned.
+    Viewpoints need a real per-viewpoint id before this can come back.
     """
     display_name = "Viewpoints"
     default = 0
