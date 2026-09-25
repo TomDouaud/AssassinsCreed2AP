@@ -60,6 +60,7 @@ FILE* g_log = nullptr;
 std::string g_save_path;
 std::string g_server, g_slot, g_password;
 bool g_ap_enabled = false;
+bool g_death_link_allowed = true;   // ini: lets a player refuse DeathLink whatever the seed says
 
 void logf(const char* fmt, ...) {
     if (!g_log) return;
@@ -421,6 +422,7 @@ DWORD WINAPI worker(LPVOID) {
     // Save-found feedback: the file must exist for detection to work. Toast it (queued until the
     // overlay is up) so the player knows immediately whether their save was located.
     bool save_found = GetFileAttributesA(g_save_path.c_str()) != INVALID_FILE_ATTRIBUTES;
+    g_death_link_allowed = ini_get(ini, "death_link", "1") != "0";
     DWORD save_size = save_found ? save_file_size(g_save_path) : 0;
     logf("save path: %s  [%s, %s, %lu bytes]", g_save_path.c_str(),
          save_from_ini ? "from ini" : "auto-detected", save_found ? "FOUND" : "NOT FOUND", save_size);
@@ -526,7 +528,10 @@ DWORD WINAPI worker(LPVOID) {
             ac2ap::overlay::toast("Connected as " + g_slot + "!",
                                   IM_COL32(120, 230, 120, 255), 6000);
             ac2ap::overlay::g_menu_open = false;   // close the connection menu on success
-            if (slot_data.contains("death_link") && slot_data["death_link"].get<bool>()) {
+            bool seed_wants_dl = slot_data.contains("death_link") && slot_data["death_link"].get<bool>();
+            if (seed_wants_dl && !g_death_link_allowed)
+                logf("AP: seed has DeathLink on, but death_link=0 in AC2AP.ini - staying out of it");
+            if (seed_wants_dl && g_death_link_allowed) {
                 death_link = true;
                 ap->ConnectUpdate(false, 0, true, {"DeathLink"});
                 logf("AP: DeathLink ACTIVE");
