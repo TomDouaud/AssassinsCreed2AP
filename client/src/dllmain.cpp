@@ -656,6 +656,12 @@ DWORD WINAPI worker(LPVOID) {
             connect_ap(ac2ap::overlay::g_conn.server, ac2ap::overlay::g_conn.slot,
                        ac2ap::overlay::g_conn.password);
             g_ap_enabled = true;
+            // Flush Windows' ini cache first. WritePrivateProfileString rewrites the whole file
+            // from a cached copy, so a save_path the player edited by hand WHILE the game was
+            // running got silently reverted the moment they connected - they set 1.save, the
+            // client wrote server/slot, and 2.save came back. NULL,NULL,NULL is the documented
+            // way to drop that cache.
+            WritePrivateProfileStringA(nullptr, nullptr, nullptr, ini.c_str());
             WritePrivateProfileStringA("ac2ap", "server", g_server.c_str(), ini.c_str());
             WritePrivateProfileStringA("ac2ap", "slot", g_slot.c_str(), ini.c_str());
             WritePrivateProfileStringA("ac2ap", "password", g_password.c_str(), ini.c_str());
