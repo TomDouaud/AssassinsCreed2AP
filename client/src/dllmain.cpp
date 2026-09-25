@@ -485,6 +485,7 @@ DWORD WINAPI worker(LPVOID) {
     int applied_index = load_applied_index();
     bool first_pass = true;
     bool resync_pending = false;   // set on connect: re-send every check already done in the save
+    bool seed_checked = false;     // the seed guard must run BEFORE anything is sent
     std::set<int64_t> seed_locs;   // locations this slot actually has (from the server, on connect)
     logf("items already applied: index <= %d", applied_index);
 
@@ -912,10 +913,42 @@ DWORD WINAPI worker(LPVOID) {
                     logf("AP: %zu checks acked by server, %zu still pending",
                          before - pending.size(), pending.size());
                 }
+                // The stale-state wipe has to happen before a single check leaves. In v0.1.9 it
+                // lived in the resync block further down, which runs later in the same pass, so a
+                // queue left over from a previous seed was flushed to the new room FIRST and
+                // cleared afterwards: connecting to a fresh room instantly sent 32 checks from a
+                // previous playthrough. Order matters more than the wipe itself.
+                if (!seed_checked && ap_authenticated) {
+                    seed_checked = true;
+                    const std::string seed_now = ap->get_seed();
+                    if (!seed_now.empty() && seed_now != load_seed_id()) {
+                        logf("AP: seed changed -> clearing %zu queued checks and the seen set",
+                             pending.size());
+                        seen.clear();          save_seen(seen);
+                        pending.clear();       save_pending(pending);
+                        last_sent = 0;
+                        applied_index = -1;    save_applied_index(applied_index);
+                        counted_state.clear(); save_counted_state(counted_state);
+                        save_seed_id(seed_now);
+                        ac2ap::overlay::toast("New seed - previous progress state cleared",
+                                              IM_COL32(230, 220, 130, 255), 4000);
+                    }
+                }
                 ULONGLONG now = GetTickCount64();
                 bool fresh = pending.size() > last_sent;      // new checks -> send at once
                 if (fresh) retry_in = 10000;
-                if (!pending.empty() && (fresh || now - last_send_at > retry_in)) {
+                // Never flush the queue while the save we watch is missing. A queue is evidence
+                // of progress in ONE playthrough; with no save to check it against, the client is
+                // blind, and that is exactly how a player who deliberately switched save ended up
+                // sending 32 checks from a previous game into a brand-new room. The checks are
+                // kept, not dropped: they go out once a save is found again.
+                bool save_alive = GetFileAttributesA(g_save_path.c_str()) != INVALID_FILE_ATTRIBUTES;
+                if (!save_alive && !pending.empty() && now - last_send_at > 30000) {
+                    last_send_at = now;
+                    logf("AP: holding %zu queued checks - save not found at %s",
+                         pending.size(), g_save_path.c_str());
+                }
+                if (save_alive && !pending.empty() && (fresh || now - last_send_at > retry_in)) {
                     last_send_at = now;
                     last_sent = pending.size();
                     std::list<int64_t> l(pending.begin(), pending.end());

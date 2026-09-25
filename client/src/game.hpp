@@ -8,6 +8,7 @@
 #pragma once
 #include <windows.h>
 #include <tlhelp32.h>
+#include <psapi.h>
 #include <cstdint>
 #include <cstring>
 #include <MinHook.h>
@@ -206,6 +207,96 @@ inline bool poke_consumable(uint32_t slot, uint32_t off, uint32_t val) {
 inline bool poke_abs(uintptr_t addr, uint32_t val) {
     if (addr < 0x10000) return false;
     return safe_write(addr, &val, 4);
+}
+
+// --- Inventory probe (read-only diagnostic) ----------------------------------
+// Goal: locate the player's owned-item arrays. What Ghidra told us (docs/ROADMAP.md):
+//  - every equipment piece is an InventoryItemSettings object, crc32 of the class name
+//    is 0xC69075AB, and the engine gives each class a tiny getter "mov eax,<crc>; retn".
+//    That getter is the build-independent anchor - the crc is the same on every build,
+//    the ADDRESS is not (Skidrow and Steam differ), so never hardcode it.
+//  - the class ctor/dtor writes the vtable as "mov dword ptr [esi], <vtable>" (C7 06 imm32),
+//    sitting within a few hundred bytes of the getter.
+//  - the player's items are plain arrays of pointers to those objects, with a u16 count
+//    masked by 0x3FFF - the same idiom as the glyph manager we already read.
+inline uintptr_t inventory_vtable() {
+    static const uint8_t GETTER[] = { 0xB8, 0xAB, 0x75, 0x90, 0xC6, 0xC3 };  // mov eax,C69075AB; retn
+    uintptr_t g = find_aob(GETTER, sizeof(GETTER));
+    if (!g) return 0;
+    // Scan FORWARD ONLY. Scanning backwards first finds the ctor of whatever class is laid
+    // out just before this one and returns ITS vtable - that mistake made the probe report 29
+    // objects full of colour values (a rendering class) instead of inventory items. On the
+    // build we can check statically the real write sits 0x4F bytes AFTER the getter.
+    MODULEINFO mi{};
+    HMODULE hm = GetModuleHandleA(nullptr);
+    if (!GetModuleInformation(GetCurrentProcess(), hm, &mi, sizeof(mi))) return 0;
+    uintptr_t mbase = (uintptr_t)mi.lpBaseOfDll, mend = mbase + mi.SizeOfImage;
+    for (uintptr_t a = g; a + 6 <= g + 0x600; a++) {
+        if (*(uint8_t*)a != 0xC7 || *(uint8_t*)(a + 1) != 0x06) continue;  // mov [esi], imm32
+        uint32_t v = *(uint32_t*)(a + 2);
+        if (v <= mbase || v >= mend) continue;
+        uint32_t first;                       // a vtable starts with a code pointer
+        if (!safe_read(v, &first, 4)) continue;
+        if (first > mbase && first < mend) return v;
+    }
+    return 0;
+}
+
+// Fills out[] with the addresses of live objects carrying that vtable. Returns how many.
+inline size_t inventory_objects(uintptr_t vt, uintptr_t* out, size_t cap) {
+    if (!vt || !out || !cap) return 0;
+    size_t n = 0;
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t addr = 0x10000;
+    while (addr < 0x7FFF0000 && n < cap) {
+        if (!VirtualQuery((LPCVOID)addr, &mbi, sizeof(mbi))) break;
+        uintptr_t base = (uintptr_t)mbi.BaseAddress; size_t sz = mbi.RegionSize;
+        DWORD prot = mbi.Protect & 0xFF;
+        bool ok = mbi.State == MEM_COMMIT && !(mbi.Protect & PAGE_GUARD) &&
+                  (prot == PAGE_READWRITE || prot == PAGE_WRITECOPY || prot == PAGE_EXECUTE_READWRITE);
+        if (ok && sz >= 4) {
+            __try {
+                for (uintptr_t a = base; a + 4 <= base + sz && n < cap; a += 4)
+                    if (*(uint32_t*)a == (uint32_t)vt) out[n++] = a;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+        addr = base + sz;
+    }
+    return n;
+}
+
+// Finds runs of consecutive pointers into objs[] - those runs are the owned-item arrays.
+// cb is called with (array address, run length). objs must be sorted ascending.
+inline void inventory_arrays(const uintptr_t* objs, size_t nobj,
+                             void (*cb)(uintptr_t, size_t), size_t min_run = 2) {
+    if (!objs || !nobj || !cb) return;
+    auto is_obj = [&](uint32_t v) {
+        size_t lo = 0, hi = nobj;
+        while (lo < hi) { size_t m = (lo + hi) / 2;
+            if (objs[m] == v) return true;
+            if (objs[m] < v) lo = m + 1; else hi = m; }
+        return false;
+    };
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t addr = 0x10000;
+    while (addr < 0x7FFF0000) {
+        if (!VirtualQuery((LPCVOID)addr, &mbi, sizeof(mbi))) break;
+        uintptr_t base = (uintptr_t)mbi.BaseAddress; size_t sz = mbi.RegionSize;
+        DWORD prot = mbi.Protect & 0xFF;
+        bool ok = mbi.State == MEM_COMMIT && !(mbi.Protect & PAGE_GUARD) &&
+                  (prot == PAGE_READWRITE || prot == PAGE_WRITECOPY || prot == PAGE_EXECUTE_READWRITE);
+        if (ok && sz >= 8) {
+            __try {
+                uintptr_t run_start = 0; size_t run = 0;
+                for (uintptr_t a = base; a + 4 <= base + sz; a += 4) {
+                    if (is_obj(*(uint32_t*)a)) { if (!run) run_start = a; run++; }
+                    else { if (run >= min_run) cb(run_start, run); run = 0; }
+                }
+                if (run >= min_run) cb(run_start, run);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+        addr = base + sz;
+    }
 }
 
 // --- Differential "unknown value" scanner (Cheat Engine style) ----------------
