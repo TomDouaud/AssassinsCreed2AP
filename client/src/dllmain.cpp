@@ -373,7 +373,7 @@ void save_seed_id(const std::string& s) {
 
 const char* type_name(uint64_t t) {
     if (t == ac2ap::REC_MISSION) return "MISSION";
-    if (t == ac2ap::REC_VIEWPOINT) return "VIEWPOINT";
+    if (t == ac2ap::REC_VIEWPOINT) return "MISSIONSTEP";  // crc32("MissionStep")/crc32("Step")
     if (t == ac2ap::REC_LOOT) return "LOOT";
     return "?";
 }
