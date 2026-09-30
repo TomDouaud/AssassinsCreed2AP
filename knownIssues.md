@@ -29,6 +29,11 @@ This is an early alpha. Known limitations:
   only the pairing of record → mission name is off for the first two. Root cause is
   known (these ids look like sequence-transition "beats", flagged as unidentified in
   our reverse-engineering notes) and needs a dedicated Sequence 2 capture to fix.
+- **Codex checks arrive when the game next writes a save, not when you decode.** The client
+  re-reads the save only when its timestamp changes, so pages you decoded sit undetected until
+  the next autosave. That makes them look tied to whatever you happened to be doing at that
+  moment - one player decoded four pages, solved a glyph puzzle some time later, and saw all
+  four codex checks fire at once and blamed the glyph. Nothing is lost, it is only late.
 - **Collectible latency.** Chests/feathers/statues/Codex are detected from the save,
   which the game writes on autosave — a check can take a short moment to register
   (missions are near-instant).

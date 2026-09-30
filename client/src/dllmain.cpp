@@ -489,6 +489,16 @@ DWORD WINAPI worker(LPVOID) {
     bool resync_pending = false;   // set on connect: re-send every check already done in the save
     bool seed_checked = false;     // the seed guard must run BEFORE anything is sent
     std::set<int64_t> seed_locs;   // locations this slot actually has (from the server, on connect)
+    // Locations already counted in the F9 breakdown. Without this the counter double-counts:
+    // the resync counts everything the SERVER says is checked (including locations a friend
+    // released or collected for you), and then every local detection added one more on top -
+    // a category showed 11/8. Counting a set, not events, is the only thing that stays honest.
+    std::set<int64_t> done_locs;
+    auto mark_done = [&](int64_t loc) {
+        if (!done_locs.insert(loc).second) return;      // already counted, do not count twice
+        int c = cat_of(loc);
+        if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; }
+    };
     logf("items already applied: index <= %d", applied_index);
 
 #ifdef AC2AP_WITH_AP
@@ -1100,10 +1110,15 @@ DWORD WINAPI worker(LPVOID) {
                     if (!loc) continue;
                     ac2ap::RecordKey gk{REC_GLYPH, (uint32_t)i};
                     if (seen.count(gk) || !ac2ap::game::glyph_solved(i)) continue;
+                    // Glyphs are read from RAM, so they are detected whether or not the seed
+                    // has them. Announcing "Checked: Glyph #n" to a player whose YAML has
+                    // glyphs OFF is pure confusion - one reported it as the glyph handing out
+                    // codex checks. Mark it seen so it is not re-evaluated, and stay quiet.
+                    if (!seed_locs.empty() && !seed_locs.count(loc)) { seen.insert(gk); continue; }
                     seen.insert(gk);
                     save_seen(seen);
                     pending.push_back(loc);
-                    { int c = cat_of(loc); if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; } }
+                    mark_done(loc);
                     logf("CHECK GLYPH #%d -> location AP %lld", i + 1, (long long)loc);
 #ifdef AC2AP_WITH_AP
                     if (ap && ap_authenticated)
@@ -1230,7 +1245,8 @@ DWORD WINAPI worker(LPVOID) {
             seed_locs = seed;          // used to drop checks this slot cannot have
             for (int i = 0; i < CAT_N; i++) { cat_total[i] = 0; cat_done[i] = 0; }
             for (auto id : seed) { int c = cat_of(id); if (c >= 0) cat_total[c]++; }
-            for (auto id : done) { int c = cat_of(id); if (c >= 0) cat_done[c]++; }
+            done_locs.clear();
+            for (auto id : done) if (done_locs.insert(id).second) { int c = cat_of(id); if (c >= 0) cat_done[c]++; }
             stat_checks = (int)done.size();
 
             for (auto id : locs) pending.push_back(id);   // re-send (idempotent) to sync the server
@@ -1248,7 +1264,7 @@ DWORD WINAPI worker(LPVOID) {
             if (it != id_map.end()) {
                 pending.push_back(it->second);
                 queued = true;
-                { int c = cat_of(it->second); if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; } }
+                mark_done(it->second);
                 logf("  -> location AP %lld queued", (long long)it->second);
 #ifdef AC2AP_WITH_AP
                 if (ap && ap_authenticated) {
@@ -1266,7 +1282,7 @@ DWORD WINAPI worker(LPVOID) {
             seen.insert(pk);
             pending.push_back(apid);
             queued = true;
-            { int c = cat_of(apid); if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; } }
+            mark_done(apid);
             logf("CHECK PRESENCE id=%08X -> location AP %lld", id, (long long)apid);
         }
         save_seen(seen);
@@ -1280,7 +1296,7 @@ DWORD WINAPI worker(LPVOID) {
                 if (it->second[i]) {
                     pending.push_back(it->second[i]);
                     queued = true;
-                    { int c = cat_of(it->second[i]); if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; } }
+                    mark_done(it->second[i]);
                     logf("CHECK %s #%d -> location AP %lld", cat, i + 1,
                          (long long)it->second[i]);
                 }
@@ -1311,7 +1327,7 @@ DWORD WINAPI worker(LPVOID) {
                     save_seen(seen);
                     pending.push_back(loc);
                     queued = true;
-                    { int c = cat_of(loc); if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; } }
+                    mark_done(loc);
                     logf("CHECK CODEX #%d -> location AP %lld", i + 1, (long long)loc);
                 }
             }
