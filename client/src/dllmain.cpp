@@ -52,7 +52,7 @@ constexpr int64_t TRAP_WANTED = 20240012103;        // notoriety -> max (guards 
 namespace {
 
 // Printed at startup: support reports are unreadable without knowing the build.
-#define AC2AP_VERSION "v0.1.10-alpha"
+#define AC2AP_VERSION "v0.1.10.1-alpha"
 
 std::string g_dir;          // folder of the .asi
 bool g_hmon = false;        // dev: health/death monitor (toggled by the `hmon` cmd)
@@ -1009,6 +1009,15 @@ DWORD WINAPI worker(LPVOID) {
                     bool in_frame = false;
                     int r = ac2ap::inv::give((uint32_t)arg, (uint8_t)arg2, note, sizeof(note), &in_frame);
                     logf("INVGIVE %08lX -> %s%s%s (%s)", arg, ac2ap::inv::result_name(r),
+                         note[0] ? " - " : "", note, in_frame ? "in frame" : "worker thread");
+                    done = r != ac2ap::inv::NOT_IN_GAME;
+                }
+                else if (op == "invtake") {   // invtake <forge_hex> [flag]: give handler, mode 1 (take)
+                    char note[200];
+                    bool in_frame = false;
+                    int r = ac2ap::inv::take((uint32_t)arg, (uint8_t)(s2.empty() ? 1 : arg2), note,
+                                             sizeof(note), &in_frame);
+                    logf("INVTAKE %08lX -> %s%s%s (%s)", arg, ac2ap::inv::result_name(r),
                          note[0] ? " - " : "", note, in_frame ? "in frame" : "worker thread");
                     done = r != ac2ap::inv::NOT_IN_GAME;
                 }

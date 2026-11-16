@@ -43,8 +43,11 @@ This is an early alpha. Known limitations:
 - **Received equipment now lands in Ezio's inventory** (weapons, armour, dyes, pouches,
   paintings). The client calls the game's own inventory routines, the same ones a shop
   purchase uses, so the result behaves like a real purchase and survives save + reload.
-  Verified in game: armour (one piece per body part, as in vanilla), weapons (the sword appears
-  in Ezio's hand), dyes (worn at once), pouches (Medicine Pouch II raises the remedy cap).
+  Verified in game: weapons (the sword appears in Ezio's hand), dyes (worn at once), pouches
+  (Medicine Pouch II raises the remedy cap). Armour reaches the inventory the way a purchase
+  does, one piece per body part - but removing a piece live was seen to leave Ezio's model and
+  health unchanged, so a received piece may likewise only show on him once the save is next
+  loaded. Being checked.
   Not yet verified by eye: a received painting showing up in the villa gallery.
   - Armour never downgrades: receiving a piece of an equal or lower tier than the one you
     wear for that body part is ignored. Pouches never lower your current tier.

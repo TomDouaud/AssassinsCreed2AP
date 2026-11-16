@@ -274,7 +274,7 @@ inline uintptr_t find_slot(uint32_t forge) {
 
 // --- the engine's own add / remove ---------------------------------------------
 
-inline int give_now(uintptr_t slot, uint8_t flag, char* note, size_t cap);   // below
+inline int give_now(uintptr_t slot, uint8_t flag, char* note, size_t cap, uint32_t mode = 0);   // below
 
 // bool Container::AddItem / RemoveItem(uint count, Handle<InventoryItemSettings>* item).
 // __thiscall, spelled as __fastcall with a dummy edx. Returns 1/0, or -1 if the call could
@@ -540,7 +540,7 @@ inline uintptr_t player_entity(bool scan_only = false) {
 // Gives an item through the game's own handler - for weapons, the only route that equips them.
 // The handler reads nothing from `this` but +0x0C, so `this` is a stand-in carrying the player
 // entity: a captured mission state could be freed by the time it is reused.
-inline int give_now(uintptr_t slot, uint8_t flag, char* note, size_t cap) {
+inline int give_now(uintptr_t slot, uint8_t flag, char* note, size_t cap, uint32_t mode) {
     if (!g_give_fn) {
         snprintf(note, cap, "give handler not found on this build");
         return CALL_FAILED;
@@ -554,7 +554,7 @@ inline int give_now(uintptr_t slot, uint8_t flag, char* note, size_t cap) {
     fake[3] = (uint32_t)entity;
     uintptr_t self = (uintptr_t)fake;
     alignas(4) uint8_t ev[0x40] = {};
-    *(uint32_t*)(ev + 0x08) = 0;        // give
+    *(uint32_t*)(ev + 0x08) = mode;     // 0 give, 1 take - the game disarms Ezio with mode 1
     *(uint32_t*)(ev + 0x0C) = 1;        // count
     *(uint32_t*)(ev + 0x10) = 0;        // no extra reward step
     *(uint32_t*)(ev + 0x14) = (uint32_t)slot;
@@ -593,7 +593,8 @@ inline volatile LONG g_frames = 0;
 inline void run_job() {
     g_job.result = g_job.op == 0 ? grant_now(g_job.slot, g_job.note, sizeof(g_job.note))
                  : g_job.op == 1 ? drop_now(g_job.slot, g_job.note, sizeof(g_job.note))
-                 : give_now(g_job.slot, g_job.flag, g_job.note, sizeof(g_job.note));
+                 : give_now(g_job.slot, g_job.flag, g_job.note, sizeof(g_job.note),
+                            g_job.op == 3 ? 1u : 0u);
 }
 
 // Called once per frame by the overlay's EndScene hook.
@@ -619,8 +620,20 @@ inline int dispatch(int op, uintptr_t slot, char* note, size_t cap, bool* in_fra
     DWORD t0 = GetTickCount();
     while (g_job.state != 3) {
         DWORD dt = GetTickCount() - t0;
-        // no frame at all in 400 ms, or the job still not picked up after 2 s: do it here
+        // No frame in 400 ms (game minimised / alt-tabbed, or overlay off), or the job still
+        // not picked up after 2 s.
         if ((dt > 400 && g_frames == f0) || dt > 2000) {
+            // Once the frame hook has proven it works, NEVER run the job off the frame: the
+            // give handler faulted there (seen live while the player was alt-tabbed), and the
+            // client then counted the item as applied - a weapon received while the player
+            // looked at the Archipelago client was lost for good. Hand it back instead; the
+            // caller retries and the job runs in the next frame once the game renders again.
+            // Without any frame ever (overlay off), running here is the only option left.
+            if (g_frames > 0 && InterlockedCompareExchange(&g_job.state, 0, 1) == 1) {
+                if (note && cap) snprintf(note, cap, "game not rendering, will retry");
+                if (in_frame) *in_frame = false;
+                return NOT_IN_GAME;
+            }
             if (InterlockedCompareExchange(&g_job.state, 2, 1) == 1) {
                 run_job();
                 InterlockedExchange(&g_job.state, 3);
@@ -654,6 +667,17 @@ inline int give(uint32_t forge, uint8_t flag, char* note, size_t cap, bool* in_f
     uintptr_t slot = find_slot(forge);
     if (!slot) return UNKNOWN_ITEM;
     return dispatch(2, slot, note, cap, in_frame, flag);
+}
+
+// The game's own way of taking an item from Ezio (give handler, mode 1): that is how a mission
+// disarms him at load. Removing the item from its container alone does NOT do it - verified
+// live: the chest piece left the list but stayed on the model and in the health bar.
+inline int take(uint32_t forge, uint8_t flag, char* note, size_t cap, bool* in_frame = nullptr) {
+    if (note && cap) note[0] = 0;
+    if (!logical()) return NOT_IN_GAME;
+    uintptr_t slot = find_slot(forge);
+    if (!slot) return UNKNOWN_ITEM;
+    return dispatch(3, slot, note, cap, in_frame, flag);
 }
 
 inline int drop(uint32_t forge, char* note, size_t cap, bool* in_frame = nullptr) {
