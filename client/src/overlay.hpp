@@ -336,7 +336,15 @@ inline void render_frame(IDirect3DDevice9* dev) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
+// Work that has to happen inside the game's frame rather than on the client's worker thread
+// (native inventory calls). Set by dllmain; SEH-guarded so a fault never takes the frame down.
+inline void (*g_frame_cb)() = nullptr;
+inline void run_frame_cb() {
+    __try { if (g_frame_cb) g_frame_cb(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+}
+
 inline HRESULT WINAPI hk_EndScene(IDirect3DDevice9* dev) {
+    run_frame_cb();
     poll_toggle();       // key polling (may create string temporaries) - outside the __try
     render_frame(dev);   // ImGui render, SEH-guarded (no local objects to unwind)
     return o_EndScene(dev);

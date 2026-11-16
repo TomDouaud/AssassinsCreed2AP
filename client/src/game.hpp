@@ -209,6 +209,55 @@ inline bool poke_abs(uintptr_t addr, uint32_t val) {
     return safe_write(addr, &val, 4);
 }
 
+// --- Object-array probe (read-only) -----------------------------------------
+// Finds arrays of objects that all share one vtable, WITHOUT being told which class. Two
+// earlier probes guessed the vtable from the code laid out around the class-id getter and
+// both picked a neighbouring class, which is why they reported 29 colour objects and then 2.
+// The owned-equipment list is simply a run of pointers whose targets all start with the same
+// vtable - that shape is distinctive on its own, so nothing has to be guessed.
+inline void scan_object_arrays(void (*cb)(uintptr_t, size_t, uint32_t), size_t min_run = 8) {
+    MODULEINFO mi{};
+    if (!GetModuleInformation(GetCurrentProcess(), GetModuleHandleA(nullptr), &mi, sizeof(mi)))
+        return;
+    const uintptr_t mlo = (uintptr_t)mi.lpBaseOfDll, mhi = mlo + mi.SizeOfImage;
+    auto head = [&](uintptr_t p, uint32_t* out) -> bool {
+        __try { *out = *(uint32_t*)p; return true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    };
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t addr = 0x10000;
+    while (addr < 0xFEFF0000) {
+        if (!VirtualQuery((LPCVOID)addr, &mbi, sizeof(mbi))) break;
+        uintptr_t base = (uintptr_t)mbi.BaseAddress; size_t sz = mbi.RegionSize;
+        DWORD prot = mbi.Protect & 0xFF;
+        bool ok = mbi.State == MEM_COMMIT && !(mbi.Protect & PAGE_GUARD) && sz >= 32 &&
+                  sz <= 64u * 1024 * 1024 &&
+                  (prot == PAGE_READWRITE || prot == PAGE_WRITECOPY || prot == PAGE_EXECUTE_READWRITE);
+        if (ok) {
+            __try {
+                uintptr_t a = base, end = base + sz;
+                while (a + 4 <= end) {
+                    uint32_t v = *(uint32_t*)a;
+                    uint32_t vt;
+                    if (v < 0x10000 || (v & 3) || !head(v, &vt) || vt < mlo || vt >= mhi) {
+                        a += 4; continue;
+                    }
+                    uintptr_t b = a + 4; size_t run = 1;
+                    while (b + 4 <= end) {
+                        uint32_t w = *(uint32_t*)b, wt;
+                        if (w < 0x10000 || (w & 3) || !head(w, &wt) || wt != vt) break;
+                        run++; b += 4;
+                    }
+                    if (run >= min_run) cb(a, run, vt);
+                    a = (run > 1) ? b : a + 4;
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+        addr = base + sz;
+        if (sz == 0) break;
+    }
+}
+
 // --- Inventory probe (read-only diagnostic) ----------------------------------
 // Goal: locate the player's owned-item arrays. What Ghidra told us (docs/ROADMAP.md):
 //  - every equipment piece is an InventoryItemSettings object, crc32 of the class name

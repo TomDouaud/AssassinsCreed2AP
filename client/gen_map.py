@@ -132,6 +132,18 @@ with open(OUT, "w", encoding="ascii") as f:
     for cat, ids in COUNTED.items():
         for idx, apid in enumerate(ids):
             f.write(f"@{cat} {idx} {apid}\n")
+    # Shop equipment as ITEMS: "$<forge_id_hex> <ap_item_id>". When the item is received the
+    # client asks the engine to add that forge item to Ezio's inventory. '$' rather than '+':
+    # a leading '+' parses as a hex sign and would be read as a mission line.
+    # Ids must match worlds/ac2/Items.py: SHOP_ITEM_BASE + index in
+    # WEAPONS + ARMOR_PIECES + POUCHES + DYES + PAINTINGS (Items.py cannot be imported here,
+    # it needs Archipelago's BaseClasses).
+    shop_item_base = loc.BASE_ID + 10000 + 200
+    forge_of = {name: fid for fid, name in loc.SHOP_EQUIPMENT}
+    shop_item_names = loc.WEAPONS + loc.ARMOR_PIECES + loc.POUCHES + loc.DYES + loc.PAINTINGS
+    f.write("# Shop equipment received as items: $<forge_id_hex> <ap_item_id>\n")
+    for i, name in enumerate(shop_item_names):
+        f.write(f"${forge_of[name]:08X} {shop_item_base + i}\n")
     # Victory: when this mission record appears in the save, the client reports
     # ClientStatus::GOAL to the server (the seed is finished).
     goal_gid = next((g for g, n in id_map.items() if n == loc.GOAL_LOCATION_NAME), None)

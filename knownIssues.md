@@ -40,18 +40,19 @@ This is an early alpha. Known limitations:
 - **Progression items have no in-game effect yet.** Progressive Sequence / Codex /
   Seal / Hidden Blade gate the seed logically on the Archipelago side, but are not
   enforced inside the game (open world stays reachable).
-- **Weapon/equipment grant.** Shop equipment (weapons, armor, dyes, paintings,
-  pouches) circulates in the multiworld — you can send and receive it, and it counts
-  for the seed — but receiving a piece does **not** put it in Ezio's inventory yet.
-  You will only carry what you actually bought in-game. This is not tied to story
-  progress: finishing a sequence changes nothing. Received-item toasts say
-  "[not granted in-game yet]" so it's unambiguous.
-  Why: a weapon is not a value we can write, it is an entity the engine builds
-  (object pool + handle + vtable). Both routes were explored and hit that wall —
-  live RAM (hardware breakpoint on the inventory during an equip, which lands in the
-  generic pool allocator) and save editing (the save carries the item in two separate
-  lists plus per-instance handles). Florins, consumables and traps *are* applied
-  in-game, because those are plain values.
+- **Received equipment now lands in Ezio's inventory** (weapons, armour, dyes, pouches,
+  paintings). The client calls the game's own inventory routines, the same ones a shop
+  purchase uses, so the result behaves like a real purchase and survives save + reload.
+  Verified in game: armour (one piece per body part, as in vanilla), weapons (the sword appears
+  in Ezio's hand), dyes (worn at once), pouches (Medicine Pouch II raises the remedy cap).
+  Not yet verified by eye: a received painting showing up in the villa gallery.
+  - Armour never downgrades: receiving a piece of an equal or lower tier than the one you
+    wear for that body part is ignored. Pouches never lower your current tier.
+  - Only the last dye received is worn.
+  - **Receiving item X also completes the location "Shop - X"** the next time the game
+    saves, because you now own X and the shop treats it as bought. Deliberate: blocking it
+    would make "Shop - X" unbuyable and strand whatever the seed put there.
+
 - **Templar Grip is UNSTABLE / experimental (off by default).** It clamps the
   notoriety *meter* to a floor that Progressive Templar Grip items lower (75% → 50%
   → 25% → 0%). What it does NOT do: force the renegade *state*. In AC2 that state is
@@ -60,6 +61,9 @@ This is an early alpha. Known limitations:
   achievable via the meter. The clamp is capped just below the renegade trigger so it
   stays inert while you are actually renegade (no meter re-pin, no repeated-animation
   bug). Treat as a curiosity, not a balanced mode.
+  The floor stays OFF until you have completed **Sequence 2 - Laying Low**: that mission
+  makes you go incognito by tearing posters, and a floor re-pinned every tick undid each
+  poster, so it could never be finished.
 - **Wanted Trap may be inert.** Same root cause: writing the notoriety value without a
   game event does not force the hostile state.
 - **DeathLink emission covers combat and instant deaths (falls).** Two complementary

@@ -18,6 +18,7 @@
 #include "records.hpp"
 #include "game.hpp"
 #include "overlay.hpp"
+#include "inventory.hpp"
 
 #ifdef AC2AP_WITH_AP
 #include <apclient.hpp>
@@ -39,8 +40,7 @@ constexpr int64_t MEDICINE    = 20240012009;
 constexpr int64_t POISON_VIALS= 20240012010;
 constexpr int64_t GUN_AMMO    = 20240012011;
 // Shop equipment (weapons/armor/dyes/paintings/pouches) starts here - Items.py SHOP_ITEM_BASE.
-// These circulate in the multiworld but are NOT materialized in Ezio's inventory yet: a weapon is
-// an entity instance built by the engine (pool + handle + vtable), not a value we can write.
+// Granted through the engine's own inventory routine, see grant_equipment / inventory.hpp.
 constexpr int64_t SHOP_ITEM_BASE = 20240012200;
 // Traps (reserved in Items.py on the apworld side; provisional ids)
 constexpr int64_t TRAP_TEMPLAR_TAX = 20240012100;   // -25% florins
@@ -52,7 +52,7 @@ constexpr int64_t TRAP_WANTED = 20240012103;        // notoriety -> max (guards 
 namespace {
 
 // Printed at startup: support reports are unreadable without knowing the build.
-#define AC2AP_VERSION "v0.1.9-alpha"
+#define AC2AP_VERSION "v0.1.10-alpha"
 
 std::string g_dir;          // folder of the .asi
 bool g_hmon = false;        // dev: health/death monitor (toggled by the `hmon` cmd)
@@ -229,6 +229,37 @@ void save_applied_index(int idx) {
     f << idx << "\n";
 }
 
+// --- shop equipment: AP item id -> forge id ("$<forge_id_hex> <ap_item_id>" in the map) ----
+// A received weapon / armour piece / pouch is put into Ezio's inventory by the engine's own
+// AddItem routine (inventory.hpp). The forge id is what names the item to the engine.
+std::map<int64_t, uint32_t> g_item_forge;
+
+void load_item_forge() {
+    g_item_forge.clear();
+    std::ifstream f(g_dir + "\\AC2AP_map.txt");
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] != '$') continue;
+        std::istringstream ss(line.substr(1));  // strip '$'
+        uint32_t forge;
+        int64_t item;
+        if (ss >> std::hex >> forge >> std::dec >> item) g_item_forge[item] = forge;
+    }
+}
+
+// Grants a piece of equipment. false = no inventory right now (menu, loading), retry.
+// Anything else is final: an item the game cannot take must not block the ones behind it.
+bool grant_equipment(int64_t item, uint32_t forge) {
+    char note[200];
+    bool in_frame = false;
+    int r = ac2ap::inv::grant(forge, note, sizeof(note), &in_frame);
+    if (r == ac2ap::inv::NOT_IN_GAME) return false;
+    logf("item %lld = forge %08X: %s%s%s%s", (long long)item, forge, ac2ap::inv::result_name(r),
+         note[0] ? " - " : "", note,
+         (r == ac2ap::inv::GRANTED && !in_frame) ? " [run on the worker thread: no frame hook]" : "");
+    return true;
+}
+
 // Applies an item in-game. false = not possible right now (loading...), retry.
 bool apply_item(int64_t item) {
     switch (item) {
@@ -246,12 +277,16 @@ bool apply_item(int64_t item) {
     case item_ids::PROGRESSIVE_TEMPLAR_GRIP:
         return true;  // passive: the notoriety floor is recomputed from grip_indexes each tick
     default:
+        if (auto it = g_item_forge.find(item); it != g_item_forge.end())
+            return grant_equipment(item, it->second);
         // logical progression (Sequence/Codex/Seal/Blade): no in-game effect in v1,
         // the gating happens on the AP logic side. Counted as applied.
         logf("item %lld: no in-game effect (v1), marked applied", (long long)item);
         return true;
     }
 }
+
+static int g_oa_n = 0;   // arrays reported by the objarr probe
 
 // --- game ID -> AP location mapping: AC2AP_map.txt "IDHEX AP_LOCATION_ID" ----
 std::map<uint32_t, int64_t> load_map() {
@@ -469,6 +504,8 @@ DWORD WINAPI worker(LPVOID) {
     auto seen = load_seen();
     auto id_map = load_map();
     auto presence = load_presence();
+    load_item_forge();
+    ac2ap::overlay::g_frame_cb = &ac2ap::inv::frame_tick;   // native inventory calls ride the frame
     auto counted = load_counted();
     auto counted_state = load_counted_state();
     uint32_t goal_id = load_goal_id();               // 0 = no goal line in the map
@@ -513,6 +550,13 @@ DWORD WINAPI worker(LPVOID) {
     // against resync replays), not in apply_item (skipped indexes would be lost on restart).
     bool grip_enabled = false;
     float grip_start = 0.0f;         // starting floor 0..1 (slot_data, percent/100)
+    // "Laying Low" (Sequence 2) is the notoriety tutorial: Paola makes Ezio go from notorious
+    // to incognito by tearing posters, and the mission only ends once the meter is down. With
+    // the grip floor re-pinned every tick, every poster is undone at once and the mission
+    // cannot be finished - a softlock. So the floor stays off until that mission is completed
+    // in the save. Unknown counts as "not done": suspending the grip is the safe mistake.
+    constexpr uint32_t MISSION_LAYING_LOW = 0x39E0A28A;
+    bool laying_low_done = false;
     std::set<int> grip_indexes;      // indexes of received Progressive Templar Grip items
     // (Re)connects the AP client with new params. Callable at startup AND from the in-game
     // connection menu (runtime reconnect). Updates the globals the handlers read.
@@ -590,11 +634,6 @@ DWORD WINAPI worker(LPVOID) {
                     std::string msg = std::string(tag) + "Received: " + name;
                     if (!from.empty() && it.player != ap->get_player_number())
                         msg += "  (from " + from + ")";
-                    // Say it outright rather than letting players hunt for gear that never shows
-                    // up in their inventory (recurring question: "I received armor but only have
-                    // what I bought - do I need to finish the sequence?"). See knownIssues.
-                    if (it.item >= item_ids::SHOP_ITEM_BASE)
-                        msg += "  [not granted in-game yet]";
                     ac2ap::overlay::toast(msg, col, 7000);
                 }
             }
@@ -728,6 +767,37 @@ DWORD WINAPI worker(LPVOID) {
             }
         }
 
+        // 0a3) give-handler hook: installed once the code is decrypted, then its records drained
+        {
+            static bool announced = false;
+            if (!announced && ac2ap::inv::install_give_hook()) {
+                logf("give-handler hook installed (handler @%08X)", (unsigned)ac2ap::inv::g_give_fn);
+                announced = true;
+            }
+            // Warm the player-entity cache here: without a mission call to name it, finding it
+            // is a ~2.6 s memory scan that would otherwise freeze the frame of the first weapon
+            // or dye grant. Cheap once cached (one class + field check).
+            // ponytail: rescans every 5 s while in game and unresolved; a load-event trigger if that ever costs.
+            static DWORD warmed = 0;
+            if (announced && GetTickCount() - warmed > 5000) {
+                warmed = GetTickCount();
+                ac2ap::inv::player_entity();
+            }
+        }
+        {
+            static LONG logged = 0;
+            LONG n = ac2ap::inv::g_give_n;
+            if (n - logged > 32) logged = n - 32;
+            for (; logged < n; logged++) {
+                const auto& r = ac2ap::inv::g_give_rec[logged % 32];
+                logf("GIVE #%ld this=%08X(crc %08X) char=%08X(crc %08X) mode=%u count=%u extra=%u "
+                     "slot=%08X forge=%08X cat=%d %s flag=%u ret=%u", (long)logged, (unsigned)r.self,
+                     r.self_crc, (unsigned)r.character, r.character_crc, r.mode, r.count, r.extra,
+                     r.slot, r.forge, (int)r.category, ac2ap::inv::category_name(r.category),
+                     r.flag, r.ret);
+            }
+        }
+
         // 0b) file-based test trigger: scripts/AC2AP_cmd.txt holds a command
         //     ("sethp N", "tax N", "money N"), executed then the file is deleted.
         //     Dev tool to test traps/DeathLink without rebuilding.
@@ -762,6 +832,16 @@ DWORD WINAPI worker(LPVOID) {
                         p += sprintf(buf + p, "%d", ac2ap::game::glyph_solved(i) ? 1 : 0);
                     logf("GLYPHS count=%d solved=[%s]", n, buf);
                     done = n > 0;
+                }
+                else if (op == "objarr") {     // read-only: arrays of same-class objects
+                    g_oa_n = 0;
+                    ac2ap::game::scan_object_arrays([](uintptr_t a, size_t run, uint32_t vt) {
+                        if (g_oa_n < 60) logf("OBJARR @%08X len=%zu vtable=%08X",
+                                              (unsigned)a, run, vt);
+                        g_oa_n++;
+                    }, 8);
+                    logf("OBJARR total=%d", g_oa_n);
+                    done = true;
                 }
                 else if (op == "cine") {       // read-only: inspect the current cinematic
                     uintptr_t mgr = ac2ap::game::cine_mgr(), c = ac2ap::game::cine_current();
@@ -893,6 +973,62 @@ DWORD WINAPI worker(LPVOID) {
                     if (!bhv) done = false;
                     else logf("BASES bhv=%p pInventory=%p PlayerDataItem=%p m1=%p",
                               (void*)bhv, (void*)inv, (void*)pdi, (void*)m1);
+                }
+                else if (op == "invlist") {   // read-only: the player's containers and items
+                    uintptr_t cs[32];
+                    int nc = ac2ap::inv::containers(cs, 32);
+                    logf("INV logical=%08X containers=%d", (unsigned)ac2ap::inv::logical(), nc);
+                    for (int i = 0; i < nc; i++) {
+                        uint32_t cat = 0, lvl = 0, cur = 0;
+                        ac2ap::game::rd32(cs[i] + 0x08, cat);
+                        ac2ap::game::rd32(cs[i] + 0x0C, lvl);
+                        ac2ap::game::rd32(cs[i] + 0x10, cur);
+                        ac2ap::inv::Item its[96];
+                        int ni = ac2ap::inv::items(cs[i], its, 96);
+                        logf("INV [%2d] %08X cat=%u %s level=%u count=%u list=%d", i, (unsigned)cs[i],
+                             cat, ac2ap::inv::category_name(cat), lvl, cur, ni);
+                        for (int k = 0; k < ni; k++)
+                            logf("INV        forge=%08X sub=%u price=%u settings=%08X",
+                                 its[k].forge, its[k].sub, its[k].price, (unsigned)its[k].settings);
+                    }
+                    done = true;   // read-only: report and consume, even out of game
+                }
+                else if (op == "invfind") {   // invfind <forge_hex>: resolve an item, owned or not
+                    uintptr_t slot = ac2ap::inv::find_slot((uint32_t)arg);
+                    ac2ap::inv::Item it{};
+                    if (slot && ac2ap::inv::read_item(slot, it)) {
+                        uintptr_t c = ac2ap::inv::container_for(it.category);
+                        logf("INVFIND %08lX: slot=%08X settings=%08X cat=%u %s sub=%u price=%u owned=%d",
+                             arg, (unsigned)slot, (unsigned)it.settings, it.category,
+                             ac2ap::inv::category_name(it.category), it.sub, it.price,
+                             c ? (int)ac2ap::inv::owns(c, it.settings) : -1);
+                    } else logf("INVFIND %08lX: no InventoryItemSettings with that id is loaded", arg);
+                }
+                else if (op == "invgive") {   // invgive <forge_hex> [flag]: the game's own give handler
+                    char note[200];
+                    bool in_frame = false;
+                    int r = ac2ap::inv::give((uint32_t)arg, (uint8_t)arg2, note, sizeof(note), &in_frame);
+                    logf("INVGIVE %08lX -> %s%s%s (%s)", arg, ac2ap::inv::result_name(r),
+                         note[0] ? " - " : "", note, in_frame ? "in frame" : "worker thread");
+                    done = r != ac2ap::inv::NOT_IN_GAME;
+                }
+                else if (op == "invhook") {   // give-handler hook status + player entity; "invhook 1" forces the memory scan
+                    ac2ap::inv::install_give_hook();
+                    logf("INVHOOK handler=%08X hooked=%d calls=%ld last_this=%08X entity=%08X%s",
+                         (unsigned)ac2ap::inv::g_give_fn, ac2ap::inv::g_give_orig != nullptr,
+                         (long)ac2ap::inv::g_give_n, (unsigned)ac2ap::inv::g_give_this,
+                         (unsigned)ac2ap::inv::player_entity(arg != 0), arg ? " (scan)" : "");
+                }
+                else if (op == "invgrant" || op == "invdrop") {   // <forge_hex>: native add / remove
+                    char note[200];
+                    bool in_frame = false;
+                    int r = op == "invgrant"
+                        ? ac2ap::inv::grant((uint32_t)arg, note, sizeof(note), &in_frame)
+                        : ac2ap::inv::drop((uint32_t)arg, note, sizeof(note), &in_frame);
+                    logf("%s %08lX -> %s%s%s (%s)", op == "invgrant" ? "INVGRANT" : "INVDROP", arg,
+                         ac2ap::inv::result_name(r), note[0] ? " - " : "", note,
+                         in_frame ? "in frame" : "worker thread");
+                    done = r != ac2ap::inv::NOT_IN_GAME;
                 }
                 else logf("unknown cmd: %s", op.c_str());
                 logf("cmd '%s %lu' -> %s", op.c_str(), arg, done ? "OK" : "out-of-game, retry");
@@ -1049,7 +1185,7 @@ DWORD WINAPI worker(LPVOID) {
         // (posters/heralds/officials) still works above the floor; below it, the value
         // snaps back next tick. No-op while out of game (resolve fails cleanly).
 #ifdef AC2AP_WITH_AP
-        if (ap && ap_authenticated && grip_enabled) {
+        if (ap && ap_authenticated && grip_enabled && laying_low_done) {
             float floor = grip_start - 0.25f * (float)grip_indexes.size();
             // Never clamp up to the renegade-trigger level (meter 1.0). Capping below it means
             // the clamp stays INERT while the player is actually renegade (cur == 1.0 > cap),
@@ -1084,7 +1220,7 @@ DWORD WINAPI worker(LPVOID) {
 #ifdef AC2AP_WITH_AP
             // Receiving a grip item is felt immediately: notoriety drops to the new floor.
             // (Otherwise the player would stay at the old level until tearing posters.)
-            if (grip_enabled && item == item_ids::PROGRESSIVE_TEMPLAR_GRIP) {
+            if (grip_enabled && laying_low_done && item == item_ids::PROGRESSIVE_TEMPLAR_GRIP) {
                 float nf = grip_start - 0.25f * (float)grip_indexes.size();
                 if (nf < 0.0f) nf = 0.0f;
                 ac2ap::game::set_notoriety(nf);
@@ -1142,6 +1278,10 @@ DWORD WINAPI worker(LPVOID) {
         last_mtime = fad.ftLastWriteTime;
 
         auto counts = ac2ap::parse_records(buf.data(), buf.size());
+        if (!laying_low_done && counts.count({ac2ap::REC_MISSION, MISSION_LAYING_LOW})) {
+            laying_low_done = true;
+            logf("Laying Low completed - Templar Grip floor can apply from now on");
+        }
         auto fresh = ac2ap::unseen_keys(seen, counts);
 
         // Victory: if the goal mission record is present in the save, tell the server the seed
