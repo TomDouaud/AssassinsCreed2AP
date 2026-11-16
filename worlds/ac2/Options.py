@@ -155,7 +155,8 @@ class TrapFill(Range):
     """Percentage of filler items replaced by traps (0 = none).
 
     Available traps: Templar Tax (-25% florins), Bad Medicine (health to 1),
-    Wanted (notoriety maxed, guards hunt you down).
+    Wanted (notoriety maxed, guards hunt you down), Disarm (Ezio's weapons are taken for
+    5 minutes, then given back - even if the game is closed in between).
     """
     display_name = "Trap Fill Percentage"
     range_start = 0

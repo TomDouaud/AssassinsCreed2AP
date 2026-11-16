@@ -47,12 +47,13 @@ constexpr int64_t TRAP_TEMPLAR_TAX = 20240012100;   // -25% florins
 constexpr int64_t TRAP_BAD_MEDICINE = 20240012101;  // health -> 1
 constexpr int64_t TRAP_DEATH = 20240012102;         // kills Ezio
 constexpr int64_t TRAP_WANTED = 20240012103;        // notoriety -> max (guards hunt you)
+constexpr int64_t TRAP_DISARM = 20240012104;        // weapons taken for DISARM_SECONDS
 }
 
 namespace {
 
 // Printed at startup: support reports are unreadable without knowing the build.
-#define AC2AP_VERSION "v0.1.10.1-alpha"
+#define AC2AP_VERSION "v0.1.11-alpha"
 
 std::string g_dir;          // folder of the .asi
 bool g_hmon = false;        // dev: health/death monitor (toggled by the `hmon` cmd)
@@ -249,6 +250,104 @@ void load_item_forge() {
 
 // Grants a piece of equipment. false = no inventory right now (menu, loading), retry.
 // Anything else is final: an item the game cannot take must not block the ones behind it.
+// --- Disarm Trap ---------------------------------------------------------------------------
+// Takes Ezio's weapons the way a mission disarms him (the give handler in "take" mode - verified
+// live: the sword leaves his hand) and gives them back after DISARM_SECONDS. Each weapon is
+// written to AC2AP_disarm.txt BEFORE it is taken, so a crash or a quit in the middle can never
+// cost the player a weapon: the next launch gives everything back once Ezio is in game.
+constexpr long long DISARM_SECONDS = 300;
+struct Disarm { long long until = 0; std::vector<uint32_t> forges; };
+Disarm g_disarm;
+
+std::string disarm_path() { return g_dir + "\\AC2AP_disarm.txt"; }
+
+void save_disarm() {
+    if (g_disarm.forges.empty()) { DeleteFileA(disarm_path().c_str()); return; }
+    std::ofstream f(disarm_path(), std::ios::trunc);
+    f << g_disarm.until << "\n";
+    for (uint32_t x : g_disarm.forges) f << std::hex << x << std::dec << "\n";
+}
+
+void load_disarm() {
+    g_disarm = {};
+    std::ifstream f(disarm_path());
+    if (!(f >> g_disarm.until)) return;
+    uint32_t x;
+    while (f >> std::hex >> x) g_disarm.forges.push_back(x);
+}
+
+bool disarmed(uint32_t forge) {
+    for (uint32_t x : g_disarm.forges) if (x == forge) return true;
+    return false;
+}
+
+// false = not in game yet, the item is retried (weapons already taken stay recorded).
+bool disarm_start() {
+    uint32_t w[16];
+    int n = ac2ap::inv::owned_forges(ac2ap::inv::CAT_WEAPON, w, 16);
+    if (n < 0) return false;
+    // Every weapon still in the list is NOT taken, recorded or not. A retry used to skip the
+    // recorded ones: the first attempt came while the game was in the background, recorded
+    // the sword, got "not rendering" - and the retry then saw it recorded and left it in
+    // Ezio's hand, so a trap received while alt-tabbed did nothing (caught by the live test).
+    int taken = 0;
+    for (int i = 0; i < n; i++) {
+        const bool fresh = !disarmed(w[i]);
+        if (fresh) {
+            g_disarm.forges.push_back(w[i]);      // recorded before it is taken: block comment
+            // Clock set at once: if a later weapon has to wait for a frame, the timer must not
+            // read as expired meanwhile, or the tick would hand the first one straight back.
+            const long long now = (long long)time(nullptr);
+            if (g_disarm.until <= now) g_disarm.until = now + DISARM_SECONDS;
+            save_disarm();
+        }
+        char note[200];
+        int r = ac2ap::inv::take(w[i], 1, note, sizeof(note));
+        if (r == ac2ap::inv::NOT_IN_GAME) return false;   // stays recorded; the retry takes it
+        if (r != ac2ap::inv::GRANTED) {
+            if (fresh) {
+                g_disarm.forges.pop_back();
+                save_disarm();
+            }
+            logf("Disarm Trap: could not take %08X: %s %s", w[i], ac2ap::inv::result_name(r), note);
+            continue;
+        }
+        taken++;
+    }
+    // The clock starts once the weapons are actually gone; a second trap while still
+    // disarmed restarts it instead of stacking.
+    if (!g_disarm.forges.empty()) {
+        g_disarm.until = (long long)time(nullptr) + DISARM_SECONDS;
+        save_disarm();
+    }
+    logf("Disarm Trap: %d weapon(s) taken, %zu held, back in %lld s", taken,
+         g_disarm.forges.size(), DISARM_SECONDS);
+    ac2ap::overlay::toast(taken ? "Disarm Trap! Your weapons are gone for 5 minutes"
+                        : g_disarm.forges.empty() ? "Disarm Trap - Ezio has no weapon to take"
+                        : "Disarm Trap - still disarmed, timer restarted",
+                          IM_COL32(240, 120, 120, 255), 6000);
+    return true;
+}
+
+// Gives the weapons back once the time is up. Rate-limited by the caller.
+void disarm_tick() {
+    if (g_disarm.forges.empty() || (long long)time(nullptr) < g_disarm.until) return;
+    while (!g_disarm.forges.empty()) {
+        uint32_t f = g_disarm.forges.back();
+        char note[200];
+        int r = ac2ap::inv::grant(f, note, sizeof(note));
+        // Transient: no inventory yet, item pool not loaded, or the call could not run now.
+        if (r == ac2ap::inv::NOT_IN_GAME || r == ac2ap::inv::UNKNOWN_ITEM ||
+            r == ac2ap::inv::CALL_FAILED) return;
+        if (r != ac2ap::inv::GRANTED && r != ac2ap::inv::ALREADY_OWNED)
+            logf("Disarm Trap: could NOT give %08X back: %s %s", f, ac2ap::inv::result_name(r), note);
+        g_disarm.forges.pop_back();
+        save_disarm();
+    }
+    logf("Disarm Trap over: weapons given back");
+    ac2ap::overlay::toast("Your weapons are back", IM_COL32(160, 220, 160, 255), 5000);
+}
+
 bool grant_equipment(int64_t item, uint32_t forge) {
     char note[200];
     bool in_frame = false;
@@ -274,6 +373,7 @@ bool apply_item(int64_t item) {
     case item_ids::TRAP_BAD_MEDICINE: return ac2ap::game::cripple_health();
     case item_ids::TRAP_DEATH:        return ac2ap::game::kill_player();
     case item_ids::TRAP_WANTED:       return ac2ap::game::set_notoriety(1.0f);
+    case item_ids::TRAP_DISARM:       return disarm_start();
     case item_ids::PROGRESSIVE_TEMPLAR_GRIP:
         return true;  // passive: the notoriety floor is recomputed from grip_indexes each tick
     default:
@@ -537,6 +637,15 @@ DWORD WINAPI worker(LPVOID) {
         if (c >= 0 && cat_total[c] > 0) { cat_done[c]++; stat_checks++; }
     };
     logf("items already applied: index <= %d", applied_index);
+    // Equipment received in an earlier session, to re-check once Ezio is in game (see
+    // ac2ap::inv::reconcile). Collected from the server's replay of every item on connect.
+    std::set<uint32_t> reconcile_todo;
+    bool reconcile_prefetched = false;
+    ULONGLONG next_inv_tick = 0;
+    load_disarm();
+    if (!g_disarm.forges.empty())
+        logf("Disarm Trap pending from a previous session: %zu weapon(s) to give back",
+             g_disarm.forges.size());
 
 #ifdef AC2AP_WITH_AP
     std::unique_ptr<APClient> ap;
@@ -1012,6 +1121,22 @@ DWORD WINAPI worker(LPVOID) {
                          note[0] ? " - " : "", note, in_frame ? "in frame" : "worker thread");
                     done = r != ac2ap::inv::NOT_IN_GAME;
                 }
+                else if (op == "trapdisarm") {   // trapdisarm [seconds]: fire the Disarm Trap (test)
+                    done = disarm_start();
+                    if (done && arg && !g_disarm.forges.empty()) {   // shorter timer for a test
+                        g_disarm.until = (long long)time(nullptr) + (long long)arg;
+                        save_disarm();
+                    }
+                    logf("TRAPDISARM -> %zu weapon(s) held, back at +%llds", g_disarm.forges.size(),
+                         g_disarm.forges.empty() ? 0LL : g_disarm.until - (long long)time(nullptr));
+                }
+                else if (op == "reconcile") {    // reconcile <forge_hex>: the on-connect re-check
+                    char note[200];
+                    int r = ac2ap::inv::reconcile((uint32_t)arg, note, sizeof(note));
+                    logf("RECONCILE %08lX -> %s%s%s", arg, ac2ap::inv::result_name(r),
+                         note[0] ? " - " : "", note);
+                    done = r != ac2ap::inv::NOT_IN_GAME;
+                }
                 else if (op == "invtake") {   // invtake <forge_hex> [flag]: give handler, mode 1 (take)
                     char note[200];
                     bool in_frame = false;
@@ -1084,20 +1209,31 @@ DWORD WINAPI worker(LPVOID) {
                 // queue left over from a previous seed was flushed to the new room FIRST and
                 // cleared afterwards: connecting to a fresh room instantly sent 32 checks from a
                 // previous playthrough. Order matters more than the wipe itself.
-                if (!seed_checked && ap_authenticated) {
+                // Only decided once the seed is actually known; an empty one is retried.
+                const std::string seed_now = ap_authenticated ? ap->get_seed() : std::string();
+                if (!seed_checked && !seed_now.empty()) {
                     seed_checked = true;
-                    const std::string seed_now = ap->get_seed();
-                    if (!seed_now.empty() && seed_now != load_seed_id()) {
-                        logf("AP: seed changed -> clearing %zu queued checks and the seen set",
-                             pending.size());
+                    const std::string prev = load_seed_id();
+                    if (seed_now != prev) {
+                        // v0.1.8 and older never wrote AC2AP_seed.txt, and updating mid-seed is
+                        // what the equipment release invites. No seed on record but items
+                        // already applied is therefore the SAME seed far more often than not:
+                        // keep the applied index, or everything received so far is applied
+                        // again (florins twice, every trap fired a second time). Equipment is
+                        // re-checked on connect anyway, so nothing is lost if it was a new one.
+                        const bool first_record = prev.empty() && applied_index >= 0;
+                        logf("AP: %s -> clearing %zu queued checks and the seen set%s",
+                             first_record ? "first seed on record" : "seed changed", pending.size(),
+                             first_record ? ", keeping the applied items" : "");
                         seen.clear();          save_seen(seen);
                         pending.clear();       save_pending(pending);
                         last_sent = 0;
-                        applied_index = -1;    save_applied_index(applied_index);
+                        if (!first_record) { applied_index = -1; save_applied_index(applied_index); }
                         counted_state.clear(); save_counted_state(counted_state);
                         save_seed_id(seed_now);
-                        ac2ap::overlay::toast("New seed - previous progress state cleared",
-                                              IM_COL32(230, 220, 130, 255), 4000);
+                        if (!first_record)
+                            ac2ap::overlay::toast("New seed - previous progress state cleared",
+                                                  IM_COL32(230, 220, 130, 255), 4000);
                     }
                 }
                 ULONGLONG now = GetTickCount64();
@@ -1218,10 +1354,37 @@ DWORD WINAPI worker(LPVOID) {
         }
 #endif
 
+        // 1a-ter) Disarm Trap timer, and equipment the save lost. Every 2 s is plenty, and
+        // both stay off the hot path of check detection.
+        if (GetTickCount64() >= next_inv_tick) {
+            next_inv_tick = GetTickCount64() + 2000;
+            disarm_tick();
+            if (!reconcile_todo.empty() && ac2ap::inv::logical()) {
+                if (!reconcile_prefetched) {
+                    std::vector<uint32_t> v(reconcile_todo.begin(), reconcile_todo.end());
+                    ac2ap::inv::prefetch_slots(v.data(), (int)v.size());
+                    reconcile_prefetched = true;
+                }
+                for (auto it = reconcile_todo.begin(); it != reconcile_todo.end();) {
+                    uint32_t f = *it;
+                    if (disarmed(f)) { it = reconcile_todo.erase(it); continue; }  // the trap returns it
+                    char note[200];
+                    int r = ac2ap::inv::reconcile(f, note, sizeof(note));
+                    if (r == ac2ap::inv::NOT_IN_GAME) { ++it; continue; }       // later
+                    if (r == ac2ap::inv::GRANTED)
+                        logf("Equipment %08X was missing from the inventory - given back (%s)", f, note);
+                    it = reconcile_todo.erase(it);
+                }
+            }
+        }
+
         // 1b) apply received items, in order, with resume
         while (!item_queue.empty()) {
             auto [idx, item] = item_queue.front();
             if (idx <= applied_index) {           // already applied (resync/reconnect)
+                if (auto fit = g_item_forge.find(item); fit != g_item_forge.end() &&
+                    reconcile_todo.insert(fit->second).second)
+                    reconcile_prefetched = false;   // new batch: one heap walk for it
                 item_queue.erase(item_queue.begin());
                 continue;
             }
@@ -1347,23 +1510,6 @@ DWORD WINAPI worker(LPVOID) {
         if (resync_pending && ap && ap_authenticated) {
             resync_pending = false;
 
-            // A (type,id) already seen in a PREVIOUS seed suppresses that check forever in the
-            // new one, because the incremental pass skips anything in `seen` - while a reconnect,
-            // which rebuilds everything from the save, still sends it. That is exactly what a
-            // player reported: chests arrived instantly but story checks only after reconnecting.
-            // Early-story mission ids are identical between playthroughs, so they were always
-            // suppressed; the chests he happened to open were new ids, so those went through.
-            const std::string seed_now = ap->get_seed();
-            if (!seed_now.empty() && seed_now != load_seed_id()) {
-                logf("AP: seed changed -> clearing state left over from the previous seed");
-                seen.clear();          save_seen(seen);
-                pending.clear();       save_pending(pending);
-                applied_index = -1;    save_applied_index(applied_index);
-                counted_state.clear(); save_counted_state(counted_state);
-                save_seed_id(seed_now);
-                ac2ap::overlay::toast("New seed - previous progress state cleared",
-                                      IM_COL32(230, 220, 130, 255), 4000);
-            }
             // Locations this save proves done (all categories, before the seed filter).
             std::set<int64_t> locs;
             for (const auto& [k, cnt] : counts) {

@@ -56,6 +56,20 @@ This is an early alpha. Known limitations:
     saves, because you now own X and the shop treats it as bought. Deliberate: blocking it
     would make "Shop - X" unbuyable and strand whatever the seed put there.
 
+- **Equipment the save lost is given back on connect.** If the game closes before the next
+  autosave, an item received just before never reaches the save. On each connect the client
+  re-checks the equipment it already received and gives back what is missing. Two
+  exceptions: dyes are never given back (only the worn dye is kept by the game, so it would
+  undo the colour you picked at the tailor), and weapons only while Ezio holds one (an empty
+  weapon list is how a mission's scripted disarm looks, and re-arming him would break it).
+- **Disarm Trap** takes Ezio's weapons for 5 minutes, then gives them back. What it takes is
+  written to `AC2AP_disarm.txt` first, so quitting or crashing mid-trap costs nothing: the
+  weapons come back once you are in game again (verified, including a save written while
+  disarmed). It needs a seed generated with this version's apworld.
+- **Not possible yet:** a trap that strips armour, or takes back the second hidden blade.
+  Removing armour from the inventory leaves it on Ezio and in his health, and one blade vs
+  two is not an inventory item - both need a routine we have not found.
+
 - **Templar Grip is UNSTABLE / experimental (off by default).** It clamps the
   notoriety *meter* to a floor that Progressive Templar Grip items lower (75% → 50%
   → 25% → 0%). What it does NOT do: force the renegade *state*. In AC2 that state is

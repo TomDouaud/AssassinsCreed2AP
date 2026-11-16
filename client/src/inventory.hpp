@@ -257,19 +257,64 @@ inline uintptr_t scan_slot(uint32_t forge) {
 
 // Cached: the scan walks the whole heap. Entries are re-checked on every use, because the
 // item pool does not sit at the same address from one session (or one load) to the next.
+struct SlotEntry { uint32_t forge; uintptr_t slot; };
+inline SlotEntry g_slots[256];
+inline int g_nslots = 0;
+
+inline void cache_slot(uint32_t forge, uintptr_t slot) {
+    for (int i = 0; i < g_nslots; i++)
+        if (g_slots[i].forge == forge) { g_slots[i].slot = slot; return; }
+    if (g_nslots < 256) g_slots[g_nslots++] = {forge, slot};
+}
+
 inline uintptr_t find_slot(uint32_t forge) {
-    struct Entry { uint32_t forge; uintptr_t slot; };
-    static Entry cache[256];
-    static int n = 0;
-    for (int i = 0; i < n; i++)
-        if (cache[i].forge == forge) {
-            if (valid_slot(cache[i].slot, forge)) return cache[i].slot;
-            cache[i].slot = scan_slot(forge);
-            return cache[i].slot;
+    for (int i = 0; i < g_nslots; i++)
+        if (g_slots[i].forge == forge) {
+            if (valid_slot(g_slots[i].slot, forge)) return g_slots[i].slot;
+            g_slots[i].slot = scan_slot(forge);
+            return g_slots[i].slot;
         }
     uintptr_t s = scan_slot(forge);
-    if (s && n < 256) cache[n++] = {forge, s};
+    if (s) cache_slot(forge, s);
     return s;
+}
+
+// One heap walk for many forge ids. Re-checking everything received on connect would
+// otherwise cost one full walk per item and hold the client's worker for a minute or more.
+inline void prefetch_slots(const uint32_t* want, int n) {
+    uint32_t w[256];
+    int m = 0;
+    for (int i = 0; i < n && m < 256; i++) {          // sorted insert, no duplicates
+        int j = m;
+        while (j > 0 && w[j - 1] > want[i]) { w[j] = w[j - 1]; j--; }
+        if (j > 0 && w[j - 1] == want[i]) { for (; j < m; j++) w[j] = w[j + 1]; continue; }
+        w[j] = want[i];
+        m++;
+    }
+    if (!m) return;
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t addr = 0x10000;
+    while (addr < 0xFFFF0000) {
+        if (!VirtualQuery((LPCVOID)addr, &mbi, sizeof(mbi))) break;
+        uintptr_t base = (uintptr_t)mbi.BaseAddress;
+        size_t sz = mbi.RegionSize;
+        DWORD prot = mbi.Protect & 0xFF;
+        bool ok = mbi.State == MEM_COMMIT && !(mbi.Protect & PAGE_GUARD) && sz >= 0x10 &&
+                  (prot == PAGE_READWRITE || prot == PAGE_WRITECOPY ||
+                   prot == PAGE_EXECUTE_READWRITE);
+        if (ok) {
+            __try {
+                for (uintptr_t a = base + 0x0C; a + 4 <= base + sz; a += 4) {
+                    uint32_t v = *(uint32_t*)a;
+                    int lo = 0, hi = m;
+                    while (lo < hi) { int mid = (lo + hi) / 2; if (w[mid] < v) lo = mid + 1; else hi = mid; }
+                    if (lo < m && w[lo] == v && valid_slot(a - 0x0C, v)) cache_slot(v, a - 0x0C);
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+        if (!sz) break;
+        addr = base + sz;
+    }
 }
 
 // --- the engine's own add / remove ---------------------------------------------
@@ -678,6 +723,43 @@ inline int take(uint32_t forge, uint8_t flag, char* note, size_t cap, bool* in_f
     uintptr_t slot = find_slot(forge);
     if (!slot) return UNKNOWN_ITEM;
     return dispatch(3, slot, note, cap, in_frame, flag);
+}
+
+// Forge ids of what the player owns in one category. -1 when there is no inventory yet.
+// Read-only, safe from the worker thread.
+inline int owned_forges(uint32_t category, uint32_t* out, int cap) {
+    if (!logical()) return -1;
+    uintptr_t c = container_for(category);
+    if (!c) return 0;
+    Item its[96];
+    int n = items(c, its, 96), k = 0;
+    for (int i = 0; i < n && k < cap; i++) out[k++] = its[i].forge;
+    return k;
+}
+
+// Gives an already-received item back if the inventory no longer has it - the game was
+// closed before an autosave wrote it, so the save loaded without it (seen live: a sword
+// given at 12:52, game closed at 12:56, gone at the next launch). grant() already refuses
+// anything owned and any armour that would be a downgrade, so this only fills real holes.
+// Two exceptions:
+//  - dyes are never given back: the Colors container holds only the dye being worn, so
+//    every dye received earlier reads as missing, and giving it back would undo the colour
+//    the player picked at the tailor;
+//  - weapons only while Ezio holds at least one. An empty weapon list is how a mission's
+//    scripted disarm looks at load, and re-arming him there would break that section.
+inline int reconcile(uint32_t forge, char* note, size_t cap) {
+    if (note && cap) note[0] = 0;
+    if (!logical()) return NOT_IN_GAME;
+    uintptr_t slot = find_slot(forge);
+    if (!slot) return UNKNOWN_ITEM;
+    Item it{};
+    if (!read_item(slot, it)) return UNKNOWN_ITEM;
+    if (it.category == CAT_COLORS) return ALREADY_OWNED;
+    if (it.category == CAT_WEAPON) {
+        uint32_t w[4];
+        if (owned_forges(CAT_WEAPON, w, 4) <= 0) return NOT_IN_GAME;   // disarmed: later
+    }
+    return dispatch(0, slot, note, cap);
 }
 
 inline int drop(uint32_t forge, char* note, size_t cap, bool* in_frame = nullptr) {

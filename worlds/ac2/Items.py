@@ -41,6 +41,7 @@ TRAP_TEMPLAR_TAX = "Templar Tax Trap"
 TRAP_BAD_MEDICINE = "Bad Medicine Trap"
 TRAP_DEATH = "Death Trap"
 TRAP_WANTED = "Wanted Trap"
+TRAP_DISARM = "Disarm Trap"
 
 # Sequence 1 is the starting state, so 13 progressive items unlock Sequences 2-14.
 PROGRESSIVE_SEQUENCE_COUNT = 13
@@ -75,11 +76,12 @@ ITEM_TABLE: Dict[str, AC2ItemData] = {
     TRAP_BAD_MEDICINE: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 101, ItemClassification.trap),
     TRAP_DEATH: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 102, ItemClassification.trap),
     TRAP_WANTED: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 103, ItemClassification.trap),
+    TRAP_DISARM: AC2ItemData(BASE_ID + ITEM_ID_OFFSET + 104, ItemClassification.trap),
 }
 
 # Death Trap removed from the pool: redundant with DeathLink (user decision).
 # The definition and id stay reserved (the client keeps kill_player for DeathLink).
-TRAP_ITEMS = (TRAP_TEMPLAR_TAX, TRAP_BAD_MEDICINE, TRAP_WANTED)
+TRAP_ITEMS = (TRAP_TEMPLAR_TAX, TRAP_BAD_MEDICINE, TRAP_WANTED, TRAP_DISARM)
 
 # --- Equipment items (counterpart of the shop locations) ---------------------
 # Each shop object circulates in the multiworld: a player in another world can
